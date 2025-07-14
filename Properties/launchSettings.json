@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "flash_test2": {
+      "commandName": "Project",
+      "nativeDebugging": false
+    }
+  }
+}
