@@ -1,13 +1,7 @@
-﻿using System.Runtime.InteropServices;
-using System.Text;
+﻿using System.Text;
 using System.Threading.Channels;
-using System.Threading.Tasks;
-using SPRDClientCore.Models;
-using SPRDClientCore.Protocol;
-using SPRDClientCore.Utils;
-using SPRDClientCore.Protocol.Encoders;
 
-namespace SPRDClientCore
+namespace SPRDClientExample
 
 {
     public class Program
@@ -19,7 +13,7 @@ namespace SPRDClientCore
                 Console.WriteLine("等待设备连接 (dl_diag)...");
                 string port = SprdProtocolHandler.FindComPort(timeout: 30000);
                 Console.WriteLine($"找到端口: {port}");
-                SprdProtocolHandler handler = new(port,new HdlcEncoder());
+                SprdProtocolHandler handler = new(port, new HdlcEncoder());
                 ComPortMonitor monitor = new(port);
                 DeviceStatus status = new DeviceStatus();
                 monitor.SetDisconnectedAction(() => { status.HasExited = true; monitor.Stop(); });
@@ -89,12 +83,13 @@ namespace SPRDClientCore
             Task logTask;
             CancellationTokenSource cts = new();
             Channel<int> updateChannel = Channel.CreateBounded<int>
-                (new BoundedChannelOptions(25)
+                (
+                new BoundedChannelOptions(25)
                 {
                     SingleReader = true,
                     SingleWriter = true,
                     FullMode = BoundedChannelFullMode.DropWrite
-                     
+
                 });
             private async Task StartTask(CancellationToken ct)
             {
@@ -125,7 +120,6 @@ namespace SPRDClientCore
             }
 
         }
-
         public class DeviceStatus
         {
             public Stages NowStage { get; set; }
