@@ -19,13 +19,21 @@
 4. Now you can start developing easily with SPRDClientCore
 5. **Optional:** You can build this project into a DLL so that you can import the libraries in other projects easily
 ## Examples of Developing
-- **Find device port and initialize protocol handler and flash utils:**
+### Find device port:
+You can easily find port by calling the static function `SprdProtocolHandler.FindComPort()`.
+### Initialize Protocol Handler and Flash Utils
+**SprdProtocolHandler** is a class which implement **IProtocolHandler** interface and can be used to communicate with unisoc(sprd) devices such as sending and receiving packets with sprd driver on Windows Platform. 
+
+Here is an example:
 ```csharp
 string port = SprdProtocolHandler.FindComPort(timeout: 30000);
 SprdProtocolHandler handler = new SprdProtocolHandler(port,new HdlcEncoder());
 SprdFlashUtils utils = new SprdFlashUtils(handler);
 ```
-- **Connect to device and get the device stages:**
+### Connect to device and get the device stages:
+"**Stages**" is an enum,including brom,fdl1,fdl2,sprd3 and sprd4. You can use `ConnectToDevice()` function to get the device stages. The function returns **(Stages SprdMode, Stages NowStage)**.
+
+Here is an example:
 ```csharp
 var stages = utils.ConnectToDevice();
 Stages deviceStage = stages.NowStage;
