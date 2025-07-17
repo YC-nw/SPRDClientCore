@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using SPRDClientCore.Models;
-
-namespace SPRDClientCore.Protocol.CheckSums
+﻿namespace SPRDClientCore.Protocol.CheckSums
 {
     public class Crc16Checksum : IChecksum
     {

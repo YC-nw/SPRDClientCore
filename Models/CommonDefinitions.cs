@@ -1,6 +1,4 @@
-﻿using System.Reflection.Metadata;
-using System.Runtime.InteropServices;
-using SPRDClientCore.Protocol.CheckSums;
+﻿using System.Runtime.InteropServices;
 
 namespace SPRDClientCore.Models
 {

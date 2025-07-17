@@ -33,12 +33,12 @@ namespace SPRDClientExample
                 bool hasGottenPartitionList = false;
                 while (!status.HasExited)
                 {
-                    if(status.NowStage == Stages.Fdl2 && !hasGottenPartitionList)
+                    if (status.NowStage == Stages.Fdl2 && !hasGottenPartitionList)
                     {
                         List<Partition> partitionList = util.GetPartitionsAndStorageInfo().partitions;
                         foreach (Partition partition in partitionList) Console.WriteLine(partition.ToString());
-                        using(FileStream fs = File.Create("partition_list.xml"))
-                        SavePartitionsToXml(partitionList,fs);
+                        using (FileStream fs = File.Create("partition_list.xml"))
+                            SavePartitionsToXml(partitionList, fs);
                         Console.WriteLine("已保存分区表");
                         hasGottenPartitionList = true;
                     }

@@ -8,7 +8,7 @@ using System.Threading.Channels;
 
 namespace SPRDClientCore.Protocol
 {
-    public class SprdProtocolHandler : IDisposable,IProtocolHandler
+    public class SprdProtocolHandler : IDisposable, IProtocolHandler
     {
         public bool Transcode
         {
@@ -190,7 +190,7 @@ namespace SPRDClientCore.Protocol
         {
             int Length = ReceiveRawPacket(rawPacketBuffer, readBuffer);
             int writePosition = DecodePacket(rawPacketBuffer, Length);
-            ValidateChecksum(rawPacketBuffer.AsMemory(0,writePosition));
+            ValidateChecksum(rawPacketBuffer.AsMemory(0, writePosition));
 
             return BuildPacket(writePosition, rawPacketBuffer);
         }
@@ -371,7 +371,7 @@ namespace SPRDClientCore.Protocol
             ChannelReader<Packet> packetsToSendReader,
             CancellationToken cancellationToken)
         {
-            var encodeAndSendChannel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(20) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true,SingleWriter = true });
+            var encodeAndSendChannel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(20) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true, SingleWriter = true });
             var decodeReceivedPacketsChannel = Channel.CreateBounded<(byte[], int)>(new BoundedChannelOptions(20) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true, SingleWriter = true });
 
             var encodeTask = EncodingPacketsAsync(packetsToSendReader, encodeAndSendChannel.Writer, cancellationToken);
@@ -421,7 +421,7 @@ namespace SPRDClientCore.Protocol
                 try
                 {
                     int writePosition = DecodePacket(packetData.data, packetData.length);
-                    ValidateChecksum(packetData.data.AsMemory(0,writePosition));
+                    ValidateChecksum(packetData.data.AsMemory(0, writePosition));
                     await writer.WriteAsync(BuildPacket(writePosition, packetData.data), cancellationToken);
                 }
                 finally
@@ -432,7 +432,7 @@ namespace SPRDClientCore.Protocol
         }
 
 
-        public Packet SendPacketAndReceive(Packet packet) => 
+        public Packet SendPacketAndReceive(Packet packet) =>
             SendPacketAndReceive(packet.Type, packet.Data, packet.ChecksumStrategy);
 
         public Packet SendPacketAndReceive(SprdCommand type, IChecksum? checksum = null) =>

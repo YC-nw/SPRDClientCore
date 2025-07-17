@@ -1,9 +1,6 @@
-﻿using SPRDClientCore.Models;
-using SPRDClientCore.Protocol.CheckSums;
-
-namespace SPRDClientCore.Protocol.Encoders
+﻿namespace SPRDClientCore.Protocol.Encoders
 {
-    public class HdlcEncoder  : IEncoder
+    public class HdlcEncoder : IEncoder
     {
         private const byte HDLC_HEADER = 0x7E;
         private const byte HDLC_ESCAPE = 0x7D;

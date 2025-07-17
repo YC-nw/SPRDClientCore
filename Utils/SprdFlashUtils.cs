@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using System.Xml.Linq;
 using System.Xml.XPath;
-using static SPRDClientCore.Models.SprdCommand;
 
 namespace SPRDClientCore.Utils
 {
@@ -591,7 +590,7 @@ namespace SPRDClientCore.Utils
         }
         #endregion
         #region 读取分区
-        byte[] CreateReadPartitionRequest(uint nowReadSize,ulong nowReadOffset,bool useMode64)
+        byte[] CreateReadPartitionRequest(uint nowReadSize, ulong nowReadOffset, bool useMode64)
         {
             byte[] result = new byte[useMode64 ? 12 : 8];
             CreateReadPartitionRequest(result, nowReadSize, nowReadOffset, useMode64);
@@ -690,7 +689,7 @@ namespace SPRDClientCore.Utils
                     {
                         ct.ThrowIfCancellationRequested();
                         uint nowReadSize = (uint)Math.Min(PerBlockSize, size + offset - i);
-                        await sendChannel.Writer.WriteAsync(new Packet(BSL_CMD_READ_MIDST, CreateReadPartitionRequest(nowReadSize,i,useMode64), checksum), ct);
+                        await sendChannel.Writer.WriteAsync(new Packet(BSL_CMD_READ_MIDST, CreateReadPartitionRequest(nowReadSize, i, useMode64), checksum), ct);
                         i += nowReadSize;
                     }
                     sendChannel.Writer.Complete();
@@ -994,7 +993,7 @@ namespace SPRDClientCore.Utils
         {
             bool useMode64 = size >> 32 != 0;
             byte[] result = new byte[useMode64 ? 80 : 76];
-            CreateSelectPartitionRequest(result,partName, size, checksum);
+            CreateSelectPartitionRequest(result, partName, size, checksum);
             return result;
         }
         private void CreateSelectPartitionRequest(Memory<byte> partData, string partName, ulong size, IChecksum? checksum = null)
