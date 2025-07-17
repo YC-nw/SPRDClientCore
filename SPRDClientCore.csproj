@@ -11,19 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="新文件夹\**" />
-    <EmbeddedResource Remove="新文件夹\**" />
-    <None Remove="新文件夹\**" />
-  </ItemGroup>
-  <ItemGroup>
     <PackageReference Include="System.IO.Ports" Version="9.0.6" />
     <PackageReference Include="System.Management" Version="9.0.4" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="WrapperToC#.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
 </Project>

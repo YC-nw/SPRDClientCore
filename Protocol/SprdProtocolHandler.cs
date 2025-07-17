@@ -11,25 +11,6 @@ using SPRDClientCore.Protocol.Encoders;
 
 namespace SPRDClientCore.Protocol
 {
-    public interface IProtocolHandler : IDisposable
-    {
-        public bool Transcode { get; set; }
-        public bool useCrc { get; set; }
-        public event Action<string>? Log;
-        public int Timeout { get;set; }
-        public bool Verbose { get; set; }
-        public bool TryConnectChannel(string port);
-        public Task SendPacketsAndReceiveAsync(
-        ChannelWriter<Packet> receivedPacketsWriter,
-        ChannelReader<Packet> packetsToSendReader,
-        CancellationToken cancellationToken);
-        public Packet SendPacketAndReceive(Packet packet);
-        public Packet SendPacketAndReceive(SprdCommand type, IChecksum? checksum = null);
-        public Packet SendPacketAndReceive(SprdCommand type,ReadOnlyMemory<byte> data,IChecksum? checksum = null);
-        public Packet WriteBytesAndReceivePacket(byte[] Data);
-        public byte[] WriteBytesAndReceiveBytes(byte[] Data);
-
-    }
     public class SprdProtocolHandler : IDisposable,IProtocolHandler
     {
         public bool Transcode
@@ -412,7 +393,6 @@ namespace SPRDClientCore.Protocol
             await foreach (var packet in packetsToSendReader.ReadAllAsync(cancellationToken))
             {
                 var encoded = _encoder.Encode(packet);
-                lastPacket = encoded;
                 await encodedDataWriter.WriteAsync(encoded, cancellationToken);
             }
             encodedDataWriter.Complete();
@@ -426,6 +406,7 @@ namespace SPRDClientCore.Protocol
             await foreach (var packetData in encodedDataReader.ReadAllAsync(cancellationToken))
             {
                 serialPort.Write(packetData, 0, packetData.Length);
+                lastPacket = packetData;
                 byte[] packetBuffer = pool.Rent(0xffff);
                 int expectedLength = ReceiveRawPacket(packetBuffer, readBuffer);
                 await rawDataWriter.WriteAsync((packetBuffer, expectedLength), cancellationToken);

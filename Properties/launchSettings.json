@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "flash_test2": {
+    "SPRDClientCore": {
       "commandName": "Project",
       "nativeDebugging": false
     }

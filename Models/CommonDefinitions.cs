@@ -1,9 +1,9 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Reflection.Metadata;
+using System.Runtime.InteropServices;
 using SPRDClientCore.Protocol.CheckSums;
 
 namespace SPRDClientCore.Models
 {
-
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct DaInfo
     {
