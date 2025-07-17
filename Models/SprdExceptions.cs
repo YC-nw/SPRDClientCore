@@ -1,6 +1,6 @@
 ﻿namespace SPRDClientCore.Models
 {
-    public static class ExceptionDefinitions
+    public static class SprdExceptions
     {
         public class SprdException : Exception
         {

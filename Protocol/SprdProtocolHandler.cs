@@ -5,9 +5,6 @@ using System.IO.Ports;
 using System.Management;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
-using SPRDClientCore.Models;
-using SPRDClientCore.Protocol.CheckSums;
-using SPRDClientCore.Protocol.Encoders;
 
 namespace SPRDClientCore.Protocol
 {
@@ -164,19 +161,19 @@ namespace SPRDClientCore.Protocol
                 {
                     packet = ReceivePacketInternal(packetBuffer, readBuffer);
                 }
-                catch (ExceptionDefinitions.ChecksumFailedException)
+                catch (ChecksumFailedException)
                 {
                     try
                     {
                         packet = SendRetryRequest();
                     }
-                    catch (ExceptionDefinitions.ChecksumFailedException)
+                    catch (ChecksumFailedException)
                     {
                         useCrc = !useCrc;
                         packet = SendRetryRequest();
                     }
                 }
-                catch (ExceptionDefinitions.BadPacketException)
+                catch (BadPacketException)
                 {
                     packet = SendRetryRequest();
                 }
@@ -249,7 +246,7 @@ namespace SPRDClientCore.Protocol
                     {
                         if (currentByte != HDLC_HEADER)
                         {
-                            throw new ExceptionDefinitions.BadPacketException("尾0x7e缺失");
+                            throw new BadPacketException("尾0x7e缺失");
                         }
                         break;
                     }
@@ -262,12 +259,12 @@ namespace SPRDClientCore.Protocol
 
             if (writePosition < 6)
             {
-                throw new ExceptionDefinitions.BadPacketException("响应信息过短");
+                throw new BadPacketException("响应信息过短");
             }
 
             if (writePosition != expectedLength)
             {
-                throw new ExceptionDefinitions.BadPacketException(
+                throw new BadPacketException(
                     $"长度不一致: 实际 {writePosition} 字节, 预期 {expectedLength} 字节");
             }
             return writePosition;
@@ -303,7 +300,7 @@ namespace SPRDClientCore.Protocol
             {
                 if (++retryCount > 5)
                 {
-                    throw new ExceptionDefinitions.ResponseTimeoutReachedException("响应超时");
+                    throw new ResponseTimeoutReachedException("响应超时");
                 }
                 serialPort.Write(lastPacket, 0, lastPacket.Length);
             }
@@ -322,7 +319,7 @@ namespace SPRDClientCore.Protocol
 
                 if (receivedChecksum != crcValue && receivedChecksum != sumValue)
                 {
-                    throw new ExceptionDefinitions.ChecksumFailedException(
+                    throw new ChecksumFailedException(
                         $"校验和失败: 接收 0x{receivedChecksum:X4}, 预期 CRC 0x{crcValue:X4} 或 SUM 0x{sumValue:X4}");
                 }
                 useCrc = receivedChecksum == crcValue;
@@ -334,7 +331,7 @@ namespace SPRDClientCore.Protocol
 
                 if (receivedChecksum != calculated)
                 {
-                    throw new ExceptionDefinitions.ChecksumFailedException(
+                    throw new ChecksumFailedException(
                         $"校验和失败: 接收 0x{receivedChecksum:X4}, 预期 0x{calculated:X4}");
                 }
             }
@@ -348,7 +345,7 @@ namespace SPRDClientCore.Protocol
 
             if (packetLength != dataLength + 6)
             {
-                throw new ExceptionDefinitions.BadPacketException(
+                throw new BadPacketException(
                     $"长度字段({dataLength})与实际包长度({packetLength})不匹配");
             }
 
