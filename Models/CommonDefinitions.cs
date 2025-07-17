@@ -1,9 +1,21 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Reflection.Metadata;
+using System.Runtime.InteropServices;
 using SPRDClientCore.Protocol.CheckSums;
 
 namespace SPRDClientCore.Models
 {
-
+    public class PartitionManagerSettings
+    {
+        public event Action<string>? Log;
+        public event Action<int>? UpdatePercentage;
+        public event Action<string>? UpdateStatus;
+        public ushort PerBlockSize { get; set; } = 0xfe00;
+        public int Timeout { get => Handler.Timeout; set => Handler.Timeout = value; }
+        public float Percentage { get; set; } = 100;
+        public bool Verbose { get => Handler.Verbose; set => Handler.Verbose = value; }
+        public IProtocolHandler Handler { get; private set; }
+        public PartitionManagerSettings(IProtocolHandler handler) {  Handler = handler; }
+    }
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct DaInfo
     {

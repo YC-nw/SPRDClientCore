@@ -30,8 +30,18 @@ namespace SPRDClientExample
                 Console.WriteLine($"SPRD版本:{status.SprdMode}");
                 Console.WriteLine($"当前阶段:{status.NowStage}");
                 CommandExecutor ce = new(util, status);
+                bool hasGottenPartitionList = false;
                 while (!status.HasExited)
                 {
+                    if(status.NowStage == Stages.Fdl2 && !hasGottenPartitionList)
+                    {
+                        List<Partition> partitionList = util.GetPartitionsAndStorageInfo().partitions;
+                        foreach (Partition partition in partitionList) Console.WriteLine(partition.ToString());
+                        using(FileStream fs = File.Create("partition_list.xml"))
+                        SavePartitionsToXml(partitionList,fs);
+                        Console.WriteLine("已保存分区表");
+                        hasGottenPartitionList = true;
+                    }
                     Console.Write($"{status.NowStage} :");
                     string? a = Console.ReadLine();
                     await ce.ExecuteAsync(a == null ? "" : a);
@@ -140,7 +150,6 @@ namespace SPRDClientExample
 回读分区：r/read_part [分区名] <保存路径> <回读大小> <回读偏移量>
 获取分区大小：ps/part_size [分区名]
 检查分区是否存在：cp/check_part [分区名]
-获取并保存当前分区表：pl/partition_list [保存路径] <获取方法，支持参数1,2,3>
 关机: off/poweroff/exit
 开机: rst/reset/poweron/po";
 
