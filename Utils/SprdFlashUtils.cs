@@ -784,7 +784,7 @@ namespace SPRDClientCore.Utils
                 _sprdProtocolHandler.SendPacketAndReceive(BSL_CMD_READ_END);
                 for (int i = 21; i >= end;)
                 {
-                    UInt64 trial = offset + (1UL << i) - (1UL << end);
+                    ulongtrial = offset + (1UL << i) - (1UL << end);
                     var ret = _sprdProtocolHandler.SendPacketAndReceive(SelectPartition(partName, (uint)trial, BSL_CMD_READ_START)).Type;
                     if (incrementing)
                     {
@@ -978,7 +978,7 @@ namespace SPRDClientCore.Utils
                     continue;
                 }
 
-                CreateSelectPartitionRequest(repartitionData.AsMemory(i), partition.Name, partition.Size);
+                CreateSelectPartitionRequest(repartitionData.AsMemory(i), partition.Name, partition.Size / 1 << partition.IndicesToMB);
                 i += 36 * sizeof(char) + sizeof(uint);
             }
             var a = handler.SendPacketAndReceive(BSL_CMD_REPARTITION, repartitionData).Type;
