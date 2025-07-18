@@ -65,15 +65,39 @@ namespace SPRDClientCore.Models
             return $"name : {Name} , size : {Math.Round(sizeValue, 0)}";
         }
     }
-    public enum ModeOfChangingDiagnostic : ushort
+    public enum ModeOfChangingDiagnostic : byte
     {
-        CustomOneTimeMode = 0, //发一次包，老设备不支持
-        CommonMode = 1 //to cali发一次，to dl_diag发两次
+        CustomOneTimeMode, //发一次包，老设备不支持
+        CommonMode //to cali发一次，to dl_diag发两次
     }
-    public enum ModeToChange : ushort
+    public enum ModeToChange : byte
     {
-        CaliDiagnostic = 1,
-        DlDiagnostic = 2
+        CaliDiagnostic,
+        DlDiagnostic
+    }
+    public enum SlotToSetActive : byte
+    {
+        SlotA,
+        SlotB
+    }
+    public static class ActiveSlot
+    {
+        public readonly static byte[] PayloadOfSlotA = new byte[]
+          {
+          0x5F, 0x61, 0x00, 0x00, 0x42, 0x43, 0x41, 0x42,
+          0x01, 0x02, 0x00, 0x00, 0x6F, 0x00, 0x1E, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0xE6, 0xBF, 0xEA, 0xC5
+          };
+
+        public static readonly byte[] PayloadOfSlotB = new byte[]
+          {
+          0x5F, 0x62, 0x00, 0x00, 0x42, 0x43, 0x41, 0x42,
+          0x01, 0x02, 0x00, 0x00, 0x1E, 0x00, 0x6F, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x9E, 0xE2, 0x10, 0x70
+          };
+
     }
     public enum SprdCommand : ushort
     {

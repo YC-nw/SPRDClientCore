@@ -61,32 +61,15 @@ namespace SPRDClientCore.Utils
                 WritePartition("misc", ms.ToArray(), 0);
             }
         }
-        public async Task ResetToCustomModeAsync(CustomModesToReset mode)
+        public void SetActiveSlot(SlotToSetActive slot)
         {
-            await Task.Run(() =>
+            if (!CheckPartitionExist("misc")) return;
+            WritePartition("misc", slot switch
             {
-                if (!CheckPartitionExist("misc")) return;
-                using (MemoryStream ms = new MemoryStream())
-                {
-                    byte[] data = Encoding.ASCII.GetBytes("boot-recovery");
-                    byte[] data2;
-                    ms.Write(data, 0, data.Length);
-                    ms.Position = 0x40;
-                    switch (mode)
-                    {
-                        case CustomModesToReset.FactoryReset:
-                            data2 = Encoding.ASCII.GetBytes("recovery\n--wipe_data\n");
-                            ms.Write(data2, 0, data2.Length);
-                            break;
-                        case CustomModesToReset.Fastboot:
-                            data2 = Encoding.ASCII.GetBytes("recovery\n--fastboot\n");
-                            ms.Write(data2, 0, data2.Length);
-                            break;
-                    }
-                    ms.SetLength(0x800);
-                    WritePartition("misc", ms.ToArray(), 0);
-                }
-            });
+                SlotToSetActive.SlotA => PayloadOfSlotA,
+                SlotToSetActive.SlotB => PayloadOfSlotB,
+                _ => throw new ArgumentOutOfRangeException(slot.ToString(), "未知的分区槽")
+            }, 0x800);
         }
         public void SetDmVerityStatus(bool status, List<Partition> partitions)
         {

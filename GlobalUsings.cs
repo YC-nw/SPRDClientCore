@@ -5,4 +5,6 @@ global using SPRDClientCore.Protocol.Encoders;
 global using SPRDClientCore.Utils;
 global using static SPRDClientCore.Models.SprdCommand;
 global using static SPRDClientCore.Models.SprdExceptions;
+global using static SPRDClientCore.Models.SlotToSetActive;
+global using static SPRDClientCore.Models.ActiveSlot;
 global using static SPRDClientCore.Utils.SprdFlashUtils;
