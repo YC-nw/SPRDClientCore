@@ -403,6 +403,7 @@ namespace SPRDClientCore.Protocol
             await foreach (var packetData in encodedDataReader.ReadAllAsync(cancellationToken))
             {
                 serialPort.Write(packetData, 0, packetData.Length);
+                Log?.Invoke($"[异步]发送{(SprdCommand)packetData[2]}包");
                 lastPacket = packetData;
                 byte[] packetBuffer = pool.Rent(0xffff);
                 int expectedLength = ReceiveRawPacket(packetBuffer, readBuffer);
@@ -426,7 +427,7 @@ namespace SPRDClientCore.Protocol
                 }
                 finally
                 {
-                    pool.Return(packetData.data, true);
+                    pool.Return(packetData.data);
                 }
             }
         }

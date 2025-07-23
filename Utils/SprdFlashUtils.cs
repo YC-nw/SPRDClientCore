@@ -645,7 +645,7 @@ namespace SPRDClientCore.Utils
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             ct = cts.Token;
             var statusMonitor = StartStatusMonitor(500, size, ct);
-            var sendChannel = Channel.CreateBounded<Packet>(new BoundedChannelOptions(20) { FullMode = BoundedChannelFullMode.Wait });
+            var sendChannel = Channel.CreateBounded<Packet>(new BoundedChannelOptions(20) { FullMode = BoundedChannelFullMode.Wait,SingleReader = true,SingleWriter = false });
             var receiveChannel = Channel.CreateUnbounded<Packet>();
             Task? sendReadPacketsTask = null;
             Task? sendAndReceiveTask = null;
@@ -961,7 +961,7 @@ namespace SPRDClientCore.Utils
                     continue;
                 }
 
-                CreateSelectPartitionRequest(repartitionData.AsMemory(i), partition.Name, partition.Size / 1 << partition.IndicesToMB);
+                CreateSelectPartitionRequest(repartitionData.AsMemory(i), partition.Name, partition.Size >> partition.IndicesToMB);
                 i += 36 * sizeof(char) + sizeof(uint);
             }
             var a = handler.SendPacketAndReceive(BSL_CMD_REPARTITION, repartitionData).Type;
