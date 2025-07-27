@@ -8,9 +8,9 @@
             public SprdException(string message) : base(message) { }
         }
 
-        public class UnexceptedResponseException : SprdException
+        public class UnexpectedResponseException : SprdException
         {
-            public UnexceptedResponseException(SprdCommand sprdCommand) : base($"数据包响应异常类型 : {sprdCommand}") { }
+            public UnexpectedResponseException(SprdCommand sprdCommand) : base($"数据包响应异常类型 : {sprdCommand}") { }
         }
 
         public class ResponseTimeoutReachedException : SprdException

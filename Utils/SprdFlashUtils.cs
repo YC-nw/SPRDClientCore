@@ -19,7 +19,7 @@ namespace SPRDClientCore.Utils
         public event Action<string>? UpdateStatus;
         public ushort PerBlockSize { get; set; } = 0xfe00;
         public int Timeout { get => handler.Timeout; set => handler.Timeout = value; }
-        public float Percentage { get; set; } = 100;
+        public double Percentage { get; set; } = 100d;
         public bool Verbose { get => handler.Verbose; set => handler.Verbose = value; }
         public IProtocolHandler Handler { get => handler; }
         public SprdFlashUtils(IProtocolHandler handler, Action<string>? log = null, Action<int>? updatePercentage = null, Action<string>? logSpeed = null)
@@ -92,36 +92,28 @@ namespace SPRDClientCore.Utils
         {
             Packet packet;
             packet = handler.SendPacketAndReceive(isReconnected ? BSL_CMD_CHECK_BAUD : BSL_CMD_CONNECT);
+            Log?.Invoke("尝试发送握手包");
             switch (packet.Type)
             {
-                default: throw new UnexceptedResponseException(packet.Type);
+                default: throw new UnexpectedResponseException(packet.Type);
                 case BSL_REP_UNSUPPORTED_COMMAND:
+                    Log?.Invoke("已与fdl2握手");
                     handler.Transcode = false;
                     handler.SendPacketAndReceive(BSL_CMD_DISABLE_TRANSCODE);
+                    Log?.Invoke("已尝试取消0x7d转码");
                     return (Stages.Sprd3, Stages.Fdl2);
                 case BSL_REP_VERIFY_ERROR:
+                    Log?.Invoke("验证失败");
                     handler.SendPacketAndReceive(BSL_CMD_CONNECT);
-                    if (handler.useCrc)
-                        return (Stages.Sprd3, Stages.Brom);
-                    else
-                        return (Stages.Sprd3, Stages.Fdl1);
+                    Log?.Invoke($"已尝试重新与{(handler.useCrc ? Stages.Brom : Stages.Fdl1)}握手");
+                    return (Stages.Sprd3, handler.useCrc ? Stages.Brom : Stages.Fdl1);
                 case BSL_REP_VER:
                     if (!isReconnected) handler.SendPacketAndReceive(BSL_CMD_CONNECT);
-                    if (Encoding.ASCII.GetString(packet.Data).ToLower().Contains("autod"))
-                    {
-                        if (handler.useCrc) return (Stages.Sprd4, Stages.Brom);
-                        else return (Stages.Sprd4, Stages.Fdl1);
-                    }
-                    else
-                    {
-                        if (handler.useCrc) return (Stages.Sprd3, Stages.Brom);
-                        else return (Stages.Sprd3, Stages.Fdl1);
-                    }
+                    Log?.Invoke($"已尝试与{(handler.useCrc ? Stages.Brom : Stages.Fdl1)}握手");
+                    return (Encoding.ASCII.GetString(packet.Data).ToLower().Contains("autod") ? Stages.Sprd4 : Stages.Sprd3, handler.useCrc ? Stages.Brom : Stages.Fdl1);
                 case BSL_REP_ACK:
-                    if (handler.useCrc)
-                        return (Stages.Sprd3, Stages.Brom);
-                    else
-                        return (Stages.Sprd3, Stages.Fdl1);
+                    Log?.Invoke($"已尝试与{(handler.useCrc ? Stages.Brom : Stages.Fdl1)}握手");
+                    return (Stages.Sprd3, handler.useCrc ? Stages.Brom : Stages.Fdl1);
 
             }
             throw new ResponseTimeoutReachedException("响应超时");
@@ -196,10 +188,9 @@ namespace SPRDClientCore.Utils
             BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(0, 4), startAddress);
             BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(4, 4), (uint)totalSize);
             if ((response = handler.SendPacketAndReceive(BSL_CMD_START_DATA, header).Type) != BSL_REP_ACK)
-                throw new UnexceptedResponseException(response);
+                throw new UnexpectedResponseException(response);
 
             bool oldVerbose = handler.Verbose;
-            handler.Verbose = false;
             long n = 0;
             for (uint offset = 0; offset < totalSize; offset += perBlockSize)
             {
@@ -210,7 +201,7 @@ namespace SPRDClientCore.Utils
                 response = handler.SendPacketAndReceive(BSL_CMD_MIDST_DATA, buffer.AsMemory(0, (int)n)).Type;
                 if (response != BSL_REP_ACK)
                 {
-                    throw new UnexceptedResponseException(response);
+                    throw new UnexpectedResponseException(response);
                 }
 
                 UpdatePercentage?.Invoke((int)((float)(offset + n) / totalSize * Percentage));
@@ -221,7 +212,7 @@ namespace SPRDClientCore.Utils
                 response = handler.SendPacketAndReceive(BSL_CMD_END_DATA).Type;
                 if (response != BSL_REP_ACK)
                 {
-                    throw new UnexceptedResponseException(response);
+                    throw new UnexpectedResponseException(response);
                 }
             }
             Log?.Invoke($"成功发送文件至 0x{startAddress:X8}");
@@ -299,6 +290,7 @@ namespace SPRDClientCore.Utils
                 if (partName.Contains("runtimenv"))
                 { ErasePartition(partName); return; }
                 if (partName.Contains("calinv")) return;
+                Log?.Invoke($"开始写入{partName}分区");
                 if (partName.Contains("fixnv1"))
                 {
                     uint offset = 0;
@@ -338,7 +330,7 @@ namespace SPRDClientCore.Utils
                         checksum += dataBytes[i];
                     Buffer.BlockCopy(BitConverter.GetBytes(checksum), 0, startData, 36 * sizeof(char) + sizeof(int), sizeof(int));
                     Packet packet = handler.SendPacketAndReceive(BSL_CMD_START_DATA, startData);
-                    if (packet.Type != BSL_REP_ACK) throw new UnexceptedResponseException(packet.Type);
+                    if (packet.Type != BSL_REP_ACK) throw new UnexpectedResponseException(packet.Type);
                     for (uint nowOffset = 0; nowOffset < length;)
                     {
                         uint nowSize = Math.Min(PerBlockSize, length - nowOffset);
@@ -346,19 +338,19 @@ namespace SPRDClientCore.Utils
                         Buffer.BlockCopy(dataBytes, (int)nowOffset, block, 0, block.Length);
                         packet = handler.SendPacketAndReceive(BSL_CMD_MIDST_DATA, block);
                         if (packet.Type != BSL_REP_ACK)
-                            throw new UnexceptedResponseException(packet.Type);
+                            throw new UnexpectedResponseException(packet.Type);
                         nowOffset += nowSize;
                         UpdatePercentage?.Invoke((int)(nowOffset / (float)length * Percentage));
                     }
                     packet = handler.SendPacketAndReceive(BSL_CMD_END_DATA);
                     if (packet.Type != BSL_REP_ACK)
-                        throw new UnexceptedResponseException(packet.Type);
+                        throw new UnexpectedResponseException(packet.Type);
 
                     return;
                 }
                 ulong dataLength = (ulong)data.Length;
                 var temp = handler.SendPacketAndReceive(BSL_CMD_START_DATA, CreateSelectPartitionRequest(partName, dataLength)).Type;
-                if (temp != BSL_REP_ACK) throw new UnexceptedResponseException(temp);
+                if (temp != BSL_REP_ACK) throw new UnexpectedResponseException(temp);
                 StartStatusMonitor(1000, dataLength, cts.Token);
                 for (ulong nowOffset = 0; nowOffset < dataLength;)
                 {
@@ -368,19 +360,20 @@ namespace SPRDClientCore.Utils
                     //Buffer.BlockCopy(data., (int)nowOffset, chunk, 0, (int)nowSize);
                     temp = handler.SendPacketAndReceive(BSL_CMD_MIDST_DATA, buffer.AsMemory(0, (int)nowSize)).Type;
                     if (temp != BSL_REP_ACK)
-                        throw new UnexceptedResponseException(temp);
+                        throw new UnexpectedResponseException(temp);
                     nowBytes += (long)nowSize;
                     nowOffset += nowSize;
                     UpdatePercentage?.Invoke((int)(nowOffset / (float)dataLength * Percentage));
                 }
                 var __temp = handler.SendPacketAndReceive(BSL_CMD_END_DATA).Type;
                 if (__temp != BSL_REP_ACK)
-                    throw new UnexceptedResponseException(__temp);
+                    throw new UnexpectedResponseException(__temp);
             }
             finally
             {
                 cts.Cancel();
                 data.Dispose();
+                Log?.Invoke($"{partName}分区写入完毕");
             }
         }
         public async Task WritePartitionAsync(string partName, Stream data, CancellationToken token)
@@ -396,7 +389,7 @@ namespace SPRDClientCore.Utils
 
             var StatusMonitor = StartStatusMonitor(500, dataLength, token);
 
-            Channel<Packet> sendChannel = Channel.CreateBounded<Packet>(new BoundedChannelOptions(20) { FullMode = BoundedChannelFullMode.Wait });
+            Channel<Packet> sendChannel = Channel.CreateBounded<Packet>(new BoundedChannelOptions(20) {SingleReader = true,SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
             Channel<Packet> receiveChannel = Channel.CreateUnbounded<Packet>();
 
             Stopwatch sw = new();
@@ -411,9 +404,9 @@ namespace SPRDClientCore.Utils
                     WritePartition(partName, data);
                     return;
                 }
-
+                Log?.Invoke($"开始写入{partName}分区");
                 var temp = handler.SendPacketAndReceive(BSL_CMD_START_DATA, CreateSelectPartitionRequest(partName, dataLength)).Type;
-                if (temp != BSL_REP_ACK) throw new UnexceptedResponseException(temp);
+                if (temp != BSL_REP_ACK) throw new UnexpectedResponseException(temp);
 
                 sendAndReceiveTask = handler.SendPacketsAndReceiveAsync(
                     receiveChannel.Writer,
@@ -444,9 +437,10 @@ namespace SPRDClientCore.Utils
                 await foreach (var packet in receiveChannel.Reader.ReadAllAsync(token))
                 {
                     if (packet.Type != BSL_REP_ACK)
-                        throw new UnexceptedResponseException(packet.Type);
-                    packetCounts++;
-                    UpdatePercentage?.Invoke(packetCounts == expectedPacketsCounts ? (int)Percentage : (int)(packetCounts * blocksize / (float)dataLength * Percentage));
+                        throw new UnexpectedResponseException(packet.Type);
+                    UpdatePercentage?.Invoke(
+                        packetCounts == expectedPacketsCounts ? (int)Percentage : (int)((long)++packetCounts * blocksize / (double)dataLength * Percentage)
+                        );
                     nowBytes += blocksize;
                     if (packetCounts >= expectedPacketsCounts)
                         break;
@@ -455,7 +449,8 @@ namespace SPRDClientCore.Utils
             finally
             {
                 sw.Stop();
-                Log?.Invoke($"耗时{sw.Elapsed.ToString("g")}");
+                Log?.Invoke($"{partName}分区写入完毕");
+                Log?.Invoke($"耗时{sw.Elapsed:g}");
                 handler.SendPacketAndReceive(BSL_CMD_END_DATA);
                 receiveChannel.Writer.Complete();
                 cts.Cancel();
@@ -493,7 +488,7 @@ namespace SPRDClientCore.Utils
         public async Task WritePartitionWithoutVerifyAsync(string partName, List<Partition> partitions, Stream data, CancellationToken token)
         {
             if (partName == "splloader" || partName == "ubipac" || partName == "sml") return;
-            const string forceName = "temp_part";
+            const string forceName = "skip_verify";
 
             List<Partition> temp = partitions.ToList();
 
@@ -520,35 +515,16 @@ namespace SPRDClientCore.Utils
                 Repartition(partitions);
             }
         }
-        public void WritePartitionWithoutVerify(string partName, List<Partition> partitions, byte[] data, ulong offset)
+        public void WritePartitionWithoutVerify(string partName, List<Partition> partitionListWithoutSplloader, byte[] data, ulong offset = 0)
+        {
+            using var ms = new MemoryStream(data);
+            WritePartitionWithoutVerify(partName, partitionListWithoutSplloader, ms, offset);
+        }
+        public void WritePartitionWithoutVerify(string partName, List<Partition> partitionListWithoutSplloader, Stream data, ulong offset = 0)
         {
             const string forceName = "skip_verify";
 
-            List<Partition> temp = partitions.ToList();
-
-            int index = temp.FindIndex(p => p.Name == partName);
-
-            if (index < 0)
-            {
-                Log?.Invoke($"分区{partName}不存在，无法写入");
-                return;
-            }
-
-            var updatedPartition = temp[index];
-            updatedPartition.Name = forceName;
-            temp[index] = updatedPartition;
-
-            Repartition(temp);
-
-            WritePartition(forceName, data, offset);
-
-            Repartition(partitions);
-        }
-        public void WritePartitionWithoutVerify(string partName, List<Partition> partitions, Stream data, ulong offset = 0)
-        {
-            const string forceName = "tempname";
-
-            List<Partition> temp = partitions.ToList();
+            List<Partition> temp = partitionListWithoutSplloader.ToList();
 
             int index = temp.FindIndex(p => p.Name == partName);
 
@@ -569,7 +545,7 @@ namespace SPRDClientCore.Utils
             else
                 WritePartition(forceName, data, offset);
 
-            Repartition(partitions);
+            Repartition(partitionListWithoutSplloader);
         }
         #endregion
         #region 读取分区
@@ -601,7 +577,7 @@ namespace SPRDClientCore.Utils
             {
 
                 if (readPacket.Type != BSL_REP_ACK)
-                    throw new UnexceptedResponseException(readPacket.Type);
+                    throw new UnexpectedResponseException(readPacket.Type);
                 Log?.Invoke($"开始读取{partName}分区");
                 StartStatusMonitor(500, size, cts.Token);
                 byte[] tempData = new byte[useMode64 ? 12 : 8];
@@ -611,7 +587,7 @@ namespace SPRDClientCore.Utils
                     CreateReadPartitionRequest(tempData, nowReadSize, nowOffset, useMode64);
                     readPacket = handler.SendPacketAndReceive(BSL_CMD_READ_MIDST, tempData);
                     nowBytes += nowReadSize;
-                    if (readPacket.Type != BSL_REP_READ_FLASH) throw new UnexceptedResponseException(readPacket.Type);
+                    if (readPacket.Type != BSL_REP_READ_FLASH) throw new UnexpectedResponseException(readPacket.Type);
                     partDataStream.WriteAsync(readPacket.Data, 0, readPacket.Data.Length);
                     nowOffset += nowReadSize;
                     UpdatePercentage?.Invoke((int)(nowOffset / (float)size * Percentage));
@@ -623,7 +599,7 @@ namespace SPRDClientCore.Utils
                 cts.Dispose();
                 PerBlockSize = originBlockSize;
                 readPacket = handler.SendPacketAndReceive(BSL_CMD_READ_END);
-                if (readPacket.Type != BSL_REP_ACK) throw new UnexceptedResponseException(readPacket.Type);
+                if (readPacket.Type != BSL_REP_ACK) throw new UnexpectedResponseException(readPacket.Type);
                 Log?.Invoke($"{partName}分区读取完毕");
             }
         }
@@ -645,7 +621,7 @@ namespace SPRDClientCore.Utils
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             ct = cts.Token;
             var statusMonitor = StartStatusMonitor(500, size, ct);
-            var sendChannel = Channel.CreateBounded<Packet>(new BoundedChannelOptions(20) { FullMode = BoundedChannelFullMode.Wait,SingleReader = true,SingleWriter = false });
+            var sendChannel = Channel.CreateBounded<Packet>(new BoundedChannelOptions(20) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true, SingleWriter = false });
             var receiveChannel = Channel.CreateUnbounded<Packet>();
             Task? sendReadPacketsTask = null;
             Task? sendAndReceiveTask = null;
@@ -657,7 +633,7 @@ namespace SPRDClientCore.Utils
 
                 var ack = handler.SendPacketAndReceive(BSL_CMD_READ_START, CreateSelectPartitionRequest(partName, size + offset));
                 if (ack.Type != BSL_REP_ACK)
-                    throw new UnexceptedResponseException(ack.Type);
+                    throw new UnexpectedResponseException(ack.Type);
                 Log?.Invoke($"开始读取{partName}分区（SPRDClient极速异步读取中）");
                 sendAndReceiveTask = handler.SendPacketsAndReceiveAsync(
     receiveChannel.Writer,
@@ -677,16 +653,19 @@ namespace SPRDClientCore.Utils
                     }
                     sendChannel.Writer.Complete();
                 }, ct);
-
-                await foreach (var packet in receiveChannel.Reader.ReadAllAsync(ct))
                 {
-                    if (packet.Type != BSL_REP_READ_FLASH)
-                        throw new UnexceptedResponseException(packet.Type);
-                    partDataStream.Write(packet.Data);
-                    nowBytes += packet.Data.LongLength;
-                    UpdatePercentage?.Invoke((int)(nowBytes / (float)size * Percentage));
-                    if ((ulong)nowBytes >= size)
-                        break;
+                    int bytesToWrite;
+                    await foreach (var packet in receiveChannel.Reader.ReadAllAsync(ct))
+                    {
+                        if (packet.Type != BSL_REP_READ_FLASH)
+                            throw new UnexpectedResponseException(packet.Type);
+                        bytesToWrite = (int)Math.Min((ulong)packet.Data.Length, size - (ulong)nowBytes);
+                        partDataStream.Write(packet.Data, 0, bytesToWrite);
+                        nowBytes += bytesToWrite;
+                        UpdatePercentage?.Invoke((int)(nowBytes / (float)size * Percentage));
+                        if ((ulong)nowBytes >= size)
+                            break;
+                    }
                 }
                 if (ct.IsCancellationRequested)
                     UpdatePercentage?.Invoke(0);
@@ -740,13 +719,13 @@ namespace SPRDClientCore.Utils
                 partName = partName.Replace('1', '2');
                 Packet packet = handler.SendPacketAndReceive(BSL_CMD_READ_START, CreateSelectPartitionRequest(partName, 8));
 
-                if (packet.Type != BSL_REP_ACK) throw new UnexceptedResponseException(packet.Type);
+                if (packet.Type != BSL_REP_ACK) throw new UnexpectedResponseException(packet.Type);
 
                 uint[] tempData = { 8, 0 };
                 byte[] data = new byte[tempData.Length * sizeof(uint)];
                 Buffer.BlockCopy(tempData, 0, data, 0, data.Length);
                 packet = handler.SendPacketAndReceive(BSL_CMD_READ_MIDST, data);
-                if (packet.Type != BSL_REP_READ_FLASH) throw new UnexceptedResponseException(packet.Type);
+                if (packet.Type != BSL_REP_READ_FLASH) throw new UnexpectedResponseException(packet.Type);
                 handler.SendPacketAndReceive(BSL_CMD_READ_END);
                 uint _temp = BinaryPrimitives.ReadUInt32LittleEndian(packet.Data.AsSpan());
                 if (_temp != 0x00004e56)
@@ -762,33 +741,6 @@ namespace SPRDClientCore.Utils
                 nandMode = true;
             if (nandMode)
             {
-#if false
-                end = 6;
-                _sprdProtocolHandler.SendPacketAndReceive(BSL_CMD_READ_END);
-                for (int i = 21; i >= end;)
-                {
-                    ulongtrial = offset + (1UL << i) - (1UL << end);
-                    var ret = _sprdProtocolHandler.SendPacketAndReceive(SelectPartition(partName, (uint)trial, BSL_CMD_READ_START)).Type;
-                    if (incrementing)
-                    {
-                        if (ret != BSL_REP_ACK)
-                        {
-                            offset += 1UL << (i - 1);
-                            i -= 2;
-                            incrementing = false;
-                        }
-                        else i++;
-                    }
-                    else
-                    {
-                        if (ret == BSL_REP_ACK) offset += (1UL << i);
-                        i--;
-                    }
-                    _sprdProtocolHandler.SendPacketAndReceive(SelectPartition(partName, (uint)trial, BSL_CMD_READ_END));
-                }
-                offset -= (1UL << end);
-#endif
-#if true
                 handler.SendPacketAndReceive(BSL_CMD_READ_END);
                 bool validNandSize(string partName, int validSize)
                 {
@@ -818,7 +770,6 @@ namespace SPRDClientCore.Utils
                     }
                 }
                 offset = (ulong)(i_min - 1) * 128 * 1024;
-#endif
             }
             else
             {
@@ -855,7 +806,7 @@ namespace SPRDClientCore.Utils
                 }
                 handler.SendPacketAndReceive(BSL_CMD_READ_END);
             }
-
+            Log?.Invoke($"{partName}分区大小：{offset >> 20}MB");
             return offset;
         }
         public (List<Partition> partitions, GetPartitionsMethod finalMethod) GetPartitionsAndStorageInfo(GetPartitionsMethod method = GetPartitionsMethod.ConvertExtTable, Action<string>? SpecifiedLog = null, Func<Task<bool>>? CheckConfirm = null)
@@ -967,7 +918,7 @@ namespace SPRDClientCore.Utils
             var a = handler.SendPacketAndReceive(BSL_CMD_REPARTITION, repartitionData).Type;
             if (a != BSL_REP_ACK)
             {
-                throw new UnexceptedResponseException(a);
+                throw new UnexpectedResponseException(a);
             }
         }
         private byte[] CreateSelectPartitionRequest(string partName,
@@ -1007,14 +958,19 @@ namespace SPRDClientCore.Utils
                 default: throw new ArgumentException();
                 case Stages.Brom:
                     SendAndCheck(BSL_CMD_EXEC_DATA);
+                    Log?.Invoke("已执行fdl1");
                     handler.useCrc = false;
                     SendAndCheck(BSL_CMD_CHECK_BAUD);
                     SendAndCheck(BSL_CMD_CONNECT);
+                    Log?.Invoke("已与fdl1握手");
                     SendAndCheck(BSL_CMD_KEEP_CHARGE);
+                    Log?.Invoke("已尝试保持充电状态");
                     return null;
                 case Stages.Fdl1:
                     DaInfo temp = GetDaInfo(handler.SendPacketAndReceive(BSL_CMD_EXEC_DATA).Data);
+                    Log?.Invoke("已执行fdl2并握手");
                     SendAndCheck(BSL_CMD_DISABLE_TRANSCODE);
+                    Log?.Invoke("已尝试取消0x7d转码");
                     handler.Transcode = false;
                     return temp;
             }
