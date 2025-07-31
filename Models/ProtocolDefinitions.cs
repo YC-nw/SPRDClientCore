@@ -11,7 +11,7 @@ namespace SPRDClientCore.Models
     public interface IProtocolHandler : IDisposable
     {
         public bool Transcode { get; set; }
-        public bool useCrc { get; set; }
+        public bool UseCrc { get; set; }
         public event Action<string>? Log;
         public int Timeout { get; set; }
         public bool Verbose { get; set; }
@@ -23,8 +23,8 @@ namespace SPRDClientCore.Models
         public Packet SendPacketAndReceive(Packet packet);
         public Packet SendPacketAndReceive(SprdCommand type, IChecksum? checksum = null);
         public Packet SendPacketAndReceive(SprdCommand type, ReadOnlyMemory<byte> data, IChecksum? checksum = null);
-        public Packet WriteBytesAndReceivePacket(byte[] Data);
-        public byte[] WriteBytesAndReceiveBytes(byte[] Data);
+        public Packet SendBytesAndReceivePacket(byte[] Data);
+        public byte[] SendBytesAndReceiveBytes(byte[] Data);
 
     }
 

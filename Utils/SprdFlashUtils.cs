@@ -13,7 +13,8 @@ namespace SPRDClientCore.Utils
     public partial class SprdFlashUtils
     {
         private IProtocolHandler handler;
-        private static long nowBytes = 0;
+        private long nowBytes = 0;
+        private static bool isSprd4AfterChangeDiagMode = false;
         public event Action<string>? Log;
         public event Action<int>? UpdatePercentage;
         public event Action<string>? UpdateStatus;
@@ -43,20 +44,14 @@ namespace SPRDClientCore.Utils
             using (MemoryStream ms = new MemoryStream())
             {
                 byte[] data = Encoding.ASCII.GetBytes("boot-recovery");
-                byte[] data2;
                 ms.Write(data, 0, data.Length);
                 ms.Position = 0x40;
-                switch (mode)
+                ms.Write(mode switch
                 {
-                    case CustomModesToReset.FactoryReset:
-                        data2 = Encoding.ASCII.GetBytes("recovery\n--wipe_data\n");
-                        ms.Write(data2, 0, data2.Length);
-                        break;
-                    case CustomModesToReset.Fastboot:
-                        data2 = Encoding.ASCII.GetBytes("recovery\n--fastboot\n");
-                        ms.Write(data2, 0, data2.Length);
-                        break;
-                }
+                    CustomModesToReset.FactoryReset => Encoding.ASCII.GetBytes("recovery\n--wipe_data\n"),
+                    CustomModesToReset.Fastboot => Encoding.ASCII.GetBytes("recovery\n--fastboot\n"),
+                    _ => new byte[] { 0 }
+                });
                 ms.SetLength(0x800);
                 WritePartition("misc", ms.ToArray(), 0);
             }
@@ -76,17 +71,8 @@ namespace SPRDClientCore.Utils
             if (!CheckPartitionExist("vbmeta")) return;
             byte[] disableByte = { 1 };
             byte[] enableByte = { 0 };
-            switch (status)
-            {
-                case true:
-                    WritePartitionWithoutVerify("vbmeta", partitions, enableByte, 0x7B);
-                    Log?.Invoke("已启用DM-verity");
-                    break;
-                case false:
-                    WritePartitionWithoutVerify("vbmeta", partitions, disableByte, 0x7B);
-                    Log?.Invoke("已禁用DM-verity");
-                    break;
-            }
+            WritePartitionWithoutVerify("vbmeta", partitions, status ? enableByte : disableByte, 0x7B);
+            Log?.Invoke(status ? "已启用DM-verity" : "已禁用DM-verity");
         }
         public (Stages SprdMode, Stages Stage) ConnectToDevice(bool isReconnected = false)
         {
@@ -105,15 +91,17 @@ namespace SPRDClientCore.Utils
                 case BSL_REP_VERIFY_ERROR:
                     Log?.Invoke("验证失败");
                     handler.SendPacketAndReceive(BSL_CMD_CONNECT);
-                    Log?.Invoke($"已尝试重新与{(handler.useCrc ? Stages.Brom : Stages.Fdl1)}握手");
-                    return (Stages.Sprd3, handler.useCrc ? Stages.Brom : Stages.Fdl1);
+                    Log?.Invoke($"已尝试重新与{(handler.UseCrc ? Stages.Brom : Stages.Fdl1)}握手");
+                    return (Stages.Sprd3, handler.UseCrc ? Stages.Brom : Stages.Fdl1);
                 case BSL_REP_VER:
                     if (!isReconnected) handler.SendPacketAndReceive(BSL_CMD_CONNECT);
-                    Log?.Invoke($"已尝试与{(handler.useCrc ? Stages.Brom : Stages.Fdl1)}握手");
-                    return (Encoding.ASCII.GetString(packet.Data).ToLower().Contains("autod") ? Stages.Sprd4 : Stages.Sprd3, handler.useCrc ? Stages.Brom : Stages.Fdl1);
+                    Log?.Invoke($"已尝试与{(handler.UseCrc ? Stages.Brom : Stages.Fdl1)}握手");
+                    return (Encoding.ASCII.GetString(packet.Data).ToLower().Contains("autod") ? Stages.Sprd4 : Stages.Sprd3, handler.UseCrc ? Stages.Brom : Stages.Fdl1);
                 case BSL_REP_ACK:
-                    Log?.Invoke($"已尝试与{(handler.useCrc ? Stages.Brom : Stages.Fdl1)}握手");
-                    return (Stages.Sprd3, handler.useCrc ? Stages.Brom : Stages.Fdl1);
+                    Log?.Invoke($"已尝试与{(handler.UseCrc ? Stages.Brom : Stages.Fdl1)}握手");
+                    var result = (isSprd4AfterChangeDiagMode ? Stages.Sprd4 : Stages.Sprd3, handler.UseCrc ? Stages.Brom : Stages.Fdl1);
+                    isSprd4AfterChangeDiagMode = false;
+                    return result;
 
             }
             throw new ResponseTimeoutReachedException("响应超时");
@@ -132,6 +120,7 @@ namespace SPRDClientCore.Utils
                 , 0x46, 0x3d, 0x22, 0x41, 0x55, 0x54, 0x4f,
                 0x44, 0x4c, 0x4f, 0x41, 0x44, 0x45, 0x52, 0x22,
                 0xd, 0xa, 0x7e };
+            bool isInDownloadMode(byte[] bytesReceived) => bytesReceived[2] == (byte)BSL_REP_VER || bytesReceived[2] == (byte)BSL_REP_VERIFY_ERROR || bytesReceived[2] == (byte)BSL_REP_UNSUPPORTED_COMMAND && bytesReceived[2] != (byte)BSL_CMD_CHECK_BAUD;
             bool isDeviceConnected = false;
             ComPortMonitor monitor = new("" +
                 "", () => isDeviceConnected = false);
@@ -154,26 +143,50 @@ namespace SPRDClientCore.Utils
             switch (mode)
             {
                 case ModeOfChangingDiagnostic.CommonMode:
-                    firstPacket[8] = 0x81;
+                    firstPacket[8] = 0x82;
                     break;
                 case ModeOfChangingDiagnostic.CustomOneTimeMode:
                     firstPacket[8] = (byte)(0x80 + (ushort)modeTo);
                     break;
             }
             log?.Invoke($"尝试发送0x{firstPacket[8]:x}包");
-            byte[] bytesReceived1 = sprdProtocolHandler.WriteBytesAndReceiveBytes(firstPacket);
-            if (bytesReceived1.Length >= 3)
-                if (bytesReceived1[2] == (byte)BSL_REP_VER || bytesReceived1[2] == (byte)BSL_REP_VERIFY_ERROR || bytesReceived1[2] == (byte)BSL_REP_UNSUPPORTED_COMMAND && bytesReceived1[2] != (byte)BSL_CMD_CHECK_BAUD)
-                {
-                    monitor.Stop();
-                    return; ///TODO:
-                }
+            byte[] bytesReceived = sprdProtocolHandler.SendBytesAndReceiveBytes(firstPacket);
+            if (bytesReceived.Length >= 6 && isInDownloadMode(bytesReceived))
+            {
+                monitor.Stop();
+                return;
+            }
+
             waitForDeviceDisconnecting();
             connectToDevice();
+
+            var temp = sprdProtocolHandler.UseCrc;
+            sprdProtocolHandler.UseCrc = true;
+            if(mode != ModeOfChangingDiagnostic.CustomOneTimeMode)
+            try
+            {
+                if ((bytesReceived = sprdProtocolHandler.SendPacketAndReceiveBytes(BSL_CMD_CONNECT, Array.Empty<byte>())).Length >= 6 && isInDownloadMode(bytesReceived))
+                {
+                    isSprd4AfterChangeDiagMode = bytesReceived[2] == (byte)BSL_REP_VER && Encoding.ASCII.GetString(bytesReceived.AsSpan(3, bytesReceived.Length - 6)).ToLower().Contains("autod");
+                    monitor.Stop();
+                    return;
+                }
+            }
+            catch (TimeoutException)
+            {
+
+            }
+            sprdProtocolHandler.UseCrc = temp;
+
             if (modeTo == ModeToChange.DlDiagnostic && mode == ModeOfChangingDiagnostic.CommonMode)
             {
                 log?.Invoke($"尝试发送autod包");
-                byte[] bytesReceived2 = sprdProtocolHandler.WriteBytesAndReceiveBytes(autodloaderPacket);
+                bytesReceived = sprdProtocolHandler.SendBytesAndReceiveBytes(autodloaderPacket);
+                if (isInDownloadMode(bytesReceived))
+                {
+                    monitor.Stop();
+                    return;
+                }
                 waitForDeviceDisconnecting();
                 connectToDevice();
             }
@@ -389,7 +402,7 @@ namespace SPRDClientCore.Utils
 
             var StatusMonitor = StartStatusMonitor(500, dataLength, token);
 
-            Channel<Packet> sendChannel = Channel.CreateBounded<Packet>(new BoundedChannelOptions(20) {SingleReader = true,SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
+            Channel<Packet> sendChannel = Channel.CreateBounded<Packet>(new BoundedChannelOptions(20) { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
             Channel<Packet> receiveChannel = Channel.CreateUnbounded<Packet>();
 
             Stopwatch sw = new();
@@ -946,7 +959,7 @@ namespace SPRDClientCore.Utils
             Packet res = handler.SendPacketAndReceive(sendType);
             if (res.Type == BSL_REP_VERIFY_ERROR)
             {
-                handler.useCrc = !handler.useCrc;
+                handler.UseCrc = !handler.UseCrc;
                 res = handler.SendPacketAndReceive(sendType);
             }
             return res.Type == expectedType;
@@ -959,7 +972,7 @@ namespace SPRDClientCore.Utils
                 case Stages.Brom:
                     SendAndCheck(BSL_CMD_EXEC_DATA);
                     Log?.Invoke("已执行fdl1");
-                    handler.useCrc = false;
+                    handler.UseCrc = false;
                     SendAndCheck(BSL_CMD_CHECK_BAUD);
                     SendAndCheck(BSL_CMD_CONNECT);
                     Log?.Invoke("已与fdl1握手");

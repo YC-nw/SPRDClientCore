@@ -68,7 +68,7 @@ namespace SPRDClientCore.Models
     public enum ModeOfChangingDiagnostic : byte
     {
         CustomOneTimeMode, //发一次包，老设备不支持
-        CommonMode //to cali发一次，to dl_diag发两次
+        CommonMode, //to cali发一次，to dl_diag发两次
     }
     public enum ModeToChange : byte
     {

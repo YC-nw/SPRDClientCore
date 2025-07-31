@@ -30,7 +30,7 @@ namespace SPRDClientCore.Protocol
             }
         }
         public bool Verbose { get; set; }
-        public bool useCrc { get; set; }
+        public bool UseCrc { get; set; }
         public event Action<string>? Log;
 
 
@@ -50,7 +50,7 @@ namespace SPRDClientCore.Protocol
         public SprdProtocolHandler(IEncoder encoder)
         {
             Verbose = true;
-            useCrc = false;
+            UseCrc = false;
             _encoder = encoder;
             lastPacket = Array.Empty<byte>();
             Timeout = 1000;
@@ -58,7 +58,7 @@ namespace SPRDClientCore.Protocol
         public SprdProtocolHandler(string port, IEncoder encoder)
         {
             Verbose = true;
-            useCrc = false;
+            UseCrc = false;
             _encoder = encoder;
             lastPacket = Array.Empty<byte>();
             Timeout = 1000;
@@ -169,7 +169,7 @@ namespace SPRDClientCore.Protocol
                     }
                     catch (ChecksumFailedException)
                     {
-                        useCrc = !useCrc;
+                        UseCrc = !UseCrc;
                         packet = SendRetryRequest();
                     }
                 }
@@ -252,8 +252,7 @@ namespace SPRDClientCore.Protocol
                     }
                 }
 
-                rawData[writePosition] = currentByte;
-                writePosition++;
+                rawData[writePosition++] = currentByte;
 
             }
 
@@ -312,7 +311,7 @@ namespace SPRDClientCore.Protocol
             ushort receivedChecksum = BinaryPrimitives.ReadUInt16BigEndian(payload.Span.Slice(payload.Length - 2, 2));
             payload = payload.Slice(0, payload.Length - 2);
 
-            if (!useCrc)
+            if (!UseCrc)
             {
                 ushort crcValue = crcChecksum.Compute(payload);
                 ushort sumValue = sprdChecksum.Compute(payload);
@@ -322,11 +321,11 @@ namespace SPRDClientCore.Protocol
                     throw new ChecksumFailedException(
                         $"校验和失败: 接收 0x{receivedChecksum:X4}, 预期 CRC 0x{crcValue:X4} 或 SUM 0x{sumValue:X4}");
                 }
-                useCrc = receivedChecksum == crcValue;
+                UseCrc = receivedChecksum == crcValue;
             }
             else
             {
-                IChecksum checker = useCrc ? crcChecksum : sprdChecksum;
+                IChecksum checker = UseCrc ? crcChecksum : sprdChecksum;
                 ushort calculated = checker.Compute(payload);
 
                 if (receivedChecksum != calculated)
@@ -351,7 +350,7 @@ namespace SPRDClientCore.Protocol
 
             _recvPacket.Data = new byte[dataLength];
             Buffer.BlockCopy(packetBuffer, 4, _recvPacket.Data, 0, dataLength);
-            _recvPacket.ChecksumStrategy = useCrc ? crcChecksum : sprdChecksum;
+            _recvPacket.ChecksumStrategy = UseCrc ? crcChecksum : sprdChecksum;
 
             if (Verbose)
             {
@@ -443,25 +442,33 @@ namespace SPRDClientCore.Protocol
         {
             if (disposed) Thread.Sleep(new TimeSpan(1, 0, 0, 0));
             if (checksum == null)
-                checksum = useCrc ? crcChecksum : sprdChecksum;
+                checksum = UseCrc ? crcChecksum : sprdChecksum;
             lastPacket = _encoder.Encode(type, data, checksum);
             serialPort.Write(lastPacket, 0, lastPacket.Length);
             if (Verbose) Log?.Invoke($"发送: {type}");
             return ReceivePacket(rawPacketBuffer, _tempBuffer);
         }
-        public Packet WriteBytesAndReceivePacket(byte[] Data)
+        public byte[] SendPacketAndReceiveBytes(SprdCommand type, ReadOnlyMemory<byte> data, IChecksum? checksum = null)
+        {
+            if (disposed) Thread.Sleep(new TimeSpan(1, 0, 0, 0));
+            if (checksum == null)
+                checksum = UseCrc ? crcChecksum : sprdChecksum;
+            lastPacket = _encoder.Encode(type, data, checksum);
+            return SendBytesAndReceiveBytes(lastPacket);
+        }
+        public Packet SendBytesAndReceivePacket(byte[] Data)
         {
             if (disposed) Thread.Sleep(new TimeSpan(1, 0, 0, 0));
             serialPort.Write(Data, 0, Data.Length);
             return ReceivePacket(rawPacketBuffer, _tempBuffer);
         }
-        public byte[] WriteBytesAndReceiveBytes(byte[] Data)
+        public byte[] SendBytesAndReceiveBytes(byte[] Data)
         {
             const int maxDataLength = 65535;
             if (disposed) Thread.Sleep(new TimeSpan(1, 0, 0, 0));
             serialPort.Write(Data, 0, Data.Length);
             byte[] data = new byte[maxDataLength];
-            int dataLength = serialPort.Read(data, 0, data.Length);
+            int dataLength = serialPort.Read(data,0,data.Length);
             byte[] ret = new byte[dataLength];
             Buffer.BlockCopy(data, 0, ret, 0, dataLength);
             return ret;
