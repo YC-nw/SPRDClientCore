@@ -10,11 +10,13 @@ namespace SPRDClientCore.Models
     }
     public interface IProtocolHandler : IDisposable
     {
+        public string PortName { get; }
         public bool Transcode { get; set; }
         public bool UseCrc { get; set; }
         public event Action<string>? Log;
         public int Timeout { get; set; }
         public bool Verbose { get; set; }
+        public bool IsPortOpen { get; }
         public bool TryConnectChannel(string port);
         public Task SendPacketsAndReceiveAsync(
         ChannelWriter<Packet> receivedPacketsWriter,

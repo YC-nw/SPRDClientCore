@@ -42,7 +42,8 @@ namespace SPRDClientCore.Models
         public string Name;
         public ulong Size;
         public int IndicesToMB;
-        public static string[] CommonPartitions { get; } = {"splloader","prodnv", "miscdata", "recovery", "misc", "trustos", "trustos_bak",
+        public static string[] CommonPartitions { get; } = {
+            "splloader","prodnv", "miscdata", "recovery", "misc", "trustos", "trustos_bak",
        "sml", "sml_bak", "uboot", "uboot_bak", "logo","logo_1" ,"logo_2","logo_3","logo_4","logo_5","logo_6","fbootlogo",
      "l_fixnv1", "l_fixnv2", "l_runtimenv1", "l_runtimenv2",
      "gpsgl", "gpsbd", "wcnmodem", "persist", "l_modem",
@@ -57,7 +58,9 @@ namespace SPRDClientCore.Models
     "super", "socko_a", "socko_b", "odmko_a", "odmko_b", "vbmeta_a", "vbmeta_b",
     "metadata", "sysdumpdb", "vbmeta_system_a", "vbmeta_system_b",
     "vbmeta_vendor_a", "vbmeta_vendor_b", "vbmeta_system_ext_a",
-    "vbmeta_system_ext_b", "vbmeta_product_a","ubipac", "vbmeta_product_b","user_partition"
+    "vbmeta_system_ext_b", "vbmeta_product_a","nr_fixnv1","nr_fixnv2","nr_runtimenv1","nr_runtimenv2"
+    ,"nr_pmsys","nr_agdsp","nr_modem","nr_v3phy","nr_nrphy","nr_nrdsp1","nr_nrdsp2",
+    "nr_deltanv","m_raw","m_data","m_webui","ubipac", "vbmeta_product_b","user_partition"
 };
         public override string ToString()
         {
@@ -65,7 +68,7 @@ namespace SPRDClientCore.Models
             return $"name : {Name} , size : {Math.Round(sizeValue, 0)}";
         }
     }
-    public enum ModeOfChangingDiagnostic : byte
+    public enum MethodOfChangingDiagnostic : byte
     {
         CustomOneTimeMode, //发一次包，老设备不支持
         CommonMode, //to cali发一次，to dl_diag发两次

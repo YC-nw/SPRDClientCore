@@ -2,6 +2,7 @@
   "profiles": {
     "SPRDClientCore": {
       "commandName": "Project",
+      "commandLineArgs": "fdl \"D:\\Desktop\\fdl1-sign.bin\" 0x5000 fdl \"D:\\Desktop\\8541_fdl2.bin\" 0x9efffe00 ",
       "nativeDebugging": false
     }
   }

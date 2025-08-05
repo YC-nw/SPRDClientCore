@@ -29,13 +29,14 @@ namespace SPRDClientCore.Protocol
                 serialPort.ReadTimeout = value; serialPort.WriteTimeout = value;
             }
         }
+        public string PortName => serialPort.PortName;
         public bool Verbose { get; set; }
         public bool UseCrc { get; set; }
+        public bool IsPortOpen => serialPort.IsOpen;
         public event Action<string>? Log;
 
 
-        byte[] rawPacketBuffer = new byte[0xffff];
-        byte[] _tempBuffer = new byte[0x8000];
+        private byte[] rawPacketBuffer = new byte[0xffff];
 
         private IEncoder _encoder;
         private bool disposed = false;
@@ -46,6 +47,7 @@ namespace SPRDClientCore.Protocol
         private const byte HDLC_HEADER = 0x7E;
         private const byte HDLC_ESCAPE = 0x7D;
         private const ushort BSL_REP_LOG = 0x0000;
+        private const ushort MAX_READ_LENGTH = 0x8000;
 
         public SprdProtocolHandler(IEncoder encoder)
         {
@@ -70,13 +72,38 @@ namespace SPRDClientCore.Protocol
         {
             for (; ; )
             {
-                foreach (var port in FindAllPorts(identifier))
+                var ports = FindAllPorts(identifier);
+                foreach (var port in ports)
                 {
-                    return port;
+                    if (!IsPortInUse(port))
+                        return port;
                 }
                 Thread.Sleep(0);
             }
             throw new InvalidOperationException("Find no ports");
+
+
+            bool IsPortInUse(string portName)
+            {
+                try
+                {
+                    using (var port = new SerialPort(portName))
+                    {
+                        port.Open();
+                        port.Close();
+                        return false;
+                    }
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return true;
+                }
+                catch (IOException)
+                {
+                    return true;
+                }
+            }
+
         }
         public static string FindComPort(uint timeout, string Identifier = "SPRD U2S DIAG")
         {
@@ -152,14 +179,14 @@ namespace SPRDClientCore.Protocol
             disposed = true;
             GC.SuppressFinalize(this);
         }
-        private Packet ReceivePacket(byte[] packetBuffer, byte[] readBuffer)
+        private Packet ReceivePacket(byte[] packetBuffer)
         {
             Packet packet;
             while (true)
             {
                 try
                 {
-                    packet = ReceivePacketInternal(packetBuffer, readBuffer);
+                    packet = ReceivePacketInternal(packetBuffer);
                 }
                 catch (ChecksumFailedException)
                 {
@@ -186,9 +213,9 @@ namespace SPRDClientCore.Protocol
             }
         }
 
-        private Packet ReceivePacketInternal(byte[] rawPacketBuffer, byte[] readBuffer)
+        private Packet ReceivePacketInternal(byte[] rawPacketBuffer)
         {
-            int Length = ReceiveRawPacket(rawPacketBuffer, readBuffer);
+            int Length = ReceiveRawPacket(rawPacketBuffer);
             int writePosition = DecodePacket(rawPacketBuffer, Length);
             ValidateChecksum(rawPacketBuffer.AsMemory(0, writePosition));
 
@@ -269,33 +296,30 @@ namespace SPRDClientCore.Protocol
             return writePosition;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int ReceiveRawPacket(byte[] rawPacketBuffer, byte[] readBuffer)
+        private int ReceiveRawPacket(byte[] rawPacketBuffer)
         {
-            int read = ReadDataWithRetry(readBuffer);
-            int expectedLength = BinaryPrimitives.ReadUInt16BigEndian(readBuffer.AsSpan(3, 2)) + 6;
-            int packetLength = 0;
-            packetLength += read;
-            Buffer.BlockCopy(readBuffer, 0, rawPacketBuffer, 0, read);
-            while (packetLength < expectedLength)
-            {
-                read = ReadDataWithRetry(readBuffer);
-                Buffer.BlockCopy(readBuffer, 0, rawPacketBuffer, packetLength, read);
-                packetLength += read;
-            }
+
+            int read = ReadDataWithRetry(rawPacketBuffer, 0, Math.Min(MAX_READ_LENGTH, rawPacketBuffer.Length));
+            int expectedLength = BinaryPrimitives.ReadUInt16BigEndian(rawPacketBuffer.AsSpan().Slice(3, 2)) + 6;
+            for (int packetLength = read; packetLength < expectedLength; packetLength += read)
+                read = ReadDataWithRetry(rawPacketBuffer, packetLength, Math.Min(MAX_READ_LENGTH, rawPacketBuffer.Length - packetLength));
             return expectedLength;
+
+
         }
-        private int TryReadRawData(byte[] buffer, int index, int count)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int TryReadRawData(byte[] buffer, int offset, int length)
         {
-            try { return serialPort.Read(buffer, index, count); }
+            try { return serialPort.Read(buffer, offset, length); }
             catch (TimeoutException) { return 0; }
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int ReadDataWithRetry(byte[] buffer)
+        private int ReadDataWithRetry(byte[] buffer, int offset, int length)
         {
             int retryCount = 0;
             int read;
 
-            while ((read = TryReadRawData(buffer, 0, buffer.Length)) <= 0)
+            while ((read = TryReadRawData(buffer, offset, length)) <= 0)
             {
                 if (++retryCount > 5)
                 {
@@ -305,34 +329,25 @@ namespace SPRDClientCore.Protocol
             }
             return read;
         }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ValidateChecksum(ReadOnlyMemory<byte> payload)
         {
             ushort receivedChecksum = BinaryPrimitives.ReadUInt16BigEndian(payload.Span.Slice(payload.Length - 2, 2));
             payload = payload.Slice(0, payload.Length - 2);
-
-            if (!UseCrc)
-            {
-                ushort crcValue = crcChecksum.Compute(payload);
-                ushort sumValue = sprdChecksum.Compute(payload);
-
-                if (receivedChecksum != crcValue && receivedChecksum != sumValue)
-                {
-                    throw new ChecksumFailedException(
-                        $"校验和失败: 接收 0x{receivedChecksum:X4}, 预期 CRC 0x{crcValue:X4} 或 SUM 0x{sumValue:X4}");
-                }
-                UseCrc = receivedChecksum == crcValue;
-            }
+            ushort firstCheckSumValue = UseCrc ? crcChecksum.Compute(payload) : sprdChecksum.Compute(payload);
+            if (firstCheckSumValue == receivedChecksum)
+                return;
             else
             {
-                IChecksum checker = UseCrc ? crcChecksum : sprdChecksum;
-                ushort calculated = checker.Compute(payload);
-
-                if (receivedChecksum != calculated)
+                ushort secondCheckSumValue;
+                if ((secondCheckSumValue = !UseCrc ? sprdChecksum.Compute(payload) : crcChecksum.Compute(payload)) == receivedChecksum)
                 {
-                    throw new ChecksumFailedException(
-                        $"校验和失败: 接收 0x{receivedChecksum:X4}, 预期 0x{calculated:X4}");
+                    UseCrc = !UseCrc;
+                    return;
                 }
+                else throw new ChecksumFailedException(
+                    $"校验和失败: 接收 0x{receivedChecksum:X4}, 预期 {(UseCrc ? "Crc" : "Sum")} 0x{firstCheckSumValue:X4} 或 {(!UseCrc ? "Crc" : "Sum")} 0x{secondCheckSumValue:X4}");
             }
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -363,7 +378,7 @@ namespace SPRDClientCore.Protocol
         {
             if (disposed) Thread.Sleep(new TimeSpan(1, 0, 0, 0));
             serialPort.Write(lastPacket, 0, lastPacket.Length);
-            return ReceivePacketInternal(rawPacketBuffer, _tempBuffer);
+            return ReceivePacketInternal(rawPacketBuffer);
         }
         public async Task SendPacketsAndReceiveAsync(
             ChannelWriter<Packet> receivedPacketsWriter,
@@ -386,30 +401,41 @@ namespace SPRDClientCore.Protocol
             ChannelWriter<byte[]> encodedDataWriter,
             CancellationToken cancellationToken)
         {
-            await foreach (var packet in packetsToSendReader.ReadAllAsync(cancellationToken))
+            try
             {
-                var encoded = _encoder.Encode(packet);
-                await encodedDataWriter.WriteAsync(encoded, cancellationToken);
+                await foreach (var packet in packetsToSendReader.ReadAllAsync(cancellationToken))
+                {
+                    var encoded = _encoder.Encode(packet);
+                    await encodedDataWriter.WriteAsync(encoded, cancellationToken);
+                }
             }
-            encodedDataWriter.Complete();
+            finally
+            {
+                encodedDataWriter.Complete();
+            }
         }
         private async Task SendPacketsAndReceiveRawAsync(ChannelReader<byte[]> encodedDataReader,
             ChannelWriter<(byte[] data, int length)> rawDataWriter,
             CancellationToken cancellationToken)
         {
             ArrayPool<byte> pool = ArrayPool<byte>.Shared;
-            byte[] readBuffer = new byte[0x8000];
-            await foreach (var packetData in encodedDataReader.ReadAllAsync(cancellationToken))
+            try
             {
-                serialPort.Write(packetData, 0, packetData.Length);
-                if(Verbose)
-                Log?.Invoke($"[异步]发送{(SprdCommand)packetData[2]}包");
-                lastPacket = packetData;
-                byte[] packetBuffer = pool.Rent(0xffff);
-                int expectedLength = ReceiveRawPacket(packetBuffer, readBuffer);
-                await rawDataWriter.WriteAsync((packetBuffer, expectedLength), cancellationToken);
+                await foreach (var packetData in encodedDataReader.ReadAllAsync(cancellationToken))
+                {
+                    serialPort.Write(packetData, 0, packetData.Length);
+                    if (Verbose)
+                        Log?.Invoke($"[异步]发送{(SprdCommand)packetData[2]}包");
+                    lastPacket = packetData;
+                    byte[] packetBuffer = pool.Rent(0xffff);
+                    int expectedLength = ReceiveRawPacket(packetBuffer);
+                    await rawDataWriter.WriteAsync((packetBuffer, expectedLength), cancellationToken);
+                }
             }
-            rawDataWriter.Complete();
+            finally
+            {
+                rawDataWriter.Complete();
+            }
         }
         private async Task DecodePacketsAsync(
             ChannelReader<(byte[] data, int length)> rawDataReader,
@@ -417,22 +443,27 @@ namespace SPRDClientCore.Protocol
             CancellationToken cancellationToken)
         {
             ArrayPool<byte> pool = ArrayPool<byte>.Shared;
-            await foreach (var packetData in rawDataReader.ReadAllAsync(cancellationToken))
+            try
             {
-                try
+                await foreach (var packetData in rawDataReader.ReadAllAsync(cancellationToken))
                 {
-                    int writePosition = DecodePacket(packetData.data, packetData.length);
-                    ValidateChecksum(packetData.data.AsMemory(0, writePosition));
-                    await writer.WriteAsync(BuildPacket(writePosition, packetData.data), cancellationToken);
-                }
-                finally
-                {
-                    pool.Return(packetData.data);
+                    try
+                    {
+                        int writePosition = DecodePacket(packetData.data, packetData.length);
+                        ValidateChecksum(packetData.data.AsMemory(0, writePosition));
+                        await writer.WriteAsync(BuildPacket(writePosition, packetData.data), cancellationToken);
+                    }
+                    finally
+                    {
+                        pool.Return(packetData.data);
+                    }
                 }
             }
+            finally
+            {
+                writer.Complete();
+            }
         }
-
-
         public Packet SendPacketAndReceive(Packet packet) =>
             SendPacketAndReceive(packet.Type, packet.Data, packet.ChecksumStrategy);
 
@@ -446,7 +477,7 @@ namespace SPRDClientCore.Protocol
             lastPacket = _encoder.Encode(type, data, checksum);
             serialPort.Write(lastPacket, 0, lastPacket.Length);
             if (Verbose) Log?.Invoke($"发送: {type}");
-            return ReceivePacket(rawPacketBuffer, _tempBuffer);
+            return ReceivePacket(rawPacketBuffer);
         }
         public byte[] SendPacketAndReceiveBytes(SprdCommand type, ReadOnlyMemory<byte> data, IChecksum? checksum = null)
         {
@@ -460,7 +491,7 @@ namespace SPRDClientCore.Protocol
         {
             if (disposed) Thread.Sleep(new TimeSpan(1, 0, 0, 0));
             serialPort.Write(Data, 0, Data.Length);
-            return ReceivePacket(rawPacketBuffer, _tempBuffer);
+            return ReceivePacket(rawPacketBuffer);
         }
         public byte[] SendBytesAndReceiveBytes(byte[] Data)
         {
@@ -468,7 +499,7 @@ namespace SPRDClientCore.Protocol
             if (disposed) Thread.Sleep(new TimeSpan(1, 0, 0, 0));
             serialPort.Write(Data, 0, Data.Length);
             byte[] data = new byte[maxDataLength];
-            int dataLength = serialPort.Read(data,0,data.Length);
+            int dataLength = serialPort.Read(data, 0, data.Length);
             byte[] ret = new byte[dataLength];
             Buffer.BlockCopy(data, 0, ret, 0, dataLength);
             return ret;

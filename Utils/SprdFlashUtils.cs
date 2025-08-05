@@ -106,13 +106,13 @@ namespace SPRDClientCore.Utils
             }
             throw new ResponseTimeoutReachedException("响应超时");
         }
-        public static SprdProtocolHandler ChangeDiagnosticMode(Action<string>? log = null, Action<string>? notify = null, ModeOfChangingDiagnostic mode = ModeOfChangingDiagnostic.CommonMode, ModeToChange modeTo = ModeToChange.DlDiagnostic)
+        public static SprdProtocolHandler ChangeDiagnosticMode(Action<string>? log = null, Action<string>? notify = null, MethodOfChangingDiagnostic mode = MethodOfChangingDiagnostic.CommonMode, ModeToChange modeTo = ModeToChange.DlDiagnostic)
         {
             var handler = new SprdProtocolHandler(new HdlcEncoder());
             ChangeDiagnosticMode(handler);
             return handler;
         }
-        public static void ChangeDiagnosticMode(SprdProtocolHandler sprdProtocolHandler, Action<string>? log = null, Action<string>? notify = null, ModeOfChangingDiagnostic mode = ModeOfChangingDiagnostic.CommonMode, ModeToChange modeTo = ModeToChange.DlDiagnostic)
+        public static void ChangeDiagnosticMode(SprdProtocolHandler sprdProtocolHandler, Action<string>? log = null, Action<string>? notify = null, MethodOfChangingDiagnostic mode = MethodOfChangingDiagnostic.CommonMode, ModeToChange modeTo = ModeToChange.DlDiagnostic)
         {
             byte[] firstPacket = { 0x7e, 0, 0, 0, 0, 8, 0, 0xfe, 0, 0x7e };
             byte[] autodloaderPacket = { 0x7e, 0, 0, 0, 0, 0x20, 0,
@@ -121,9 +121,9 @@ namespace SPRDClientCore.Utils
                 0x44, 0x4c, 0x4f, 0x41, 0x44, 0x45, 0x52, 0x22,
                 0xd, 0xa, 0x7e };
             bool isInDownloadMode(byte[] bytesReceived) => bytesReceived[2] == (byte)BSL_REP_VER || bytesReceived[2] == (byte)BSL_REP_VERIFY_ERROR || bytesReceived[2] == (byte)BSL_REP_UNSUPPORTED_COMMAND && bytesReceived[2] != (byte)BSL_CMD_CHECK_BAUD;
-            bool isDeviceConnected = false;
-            ComPortMonitor monitor = new("" +
-                "", () => isDeviceConnected = false);
+            bool isDeviceConnected = sprdProtocolHandler.IsPortOpen;
+            ComPortMonitor monitor = new(
+                isDeviceConnected ? sprdProtocolHandler.PortName : "", () => isDeviceConnected = false);
             Action waitForDeviceDisconnecting = () =>
             {
                 while (isDeviceConnected) continue;
@@ -139,13 +139,14 @@ namespace SPRDClientCore.Utils
                 monitor = new(port, () => isDeviceConnected = false);
                 isDeviceConnected = true;
             };
-            connectToDevice();
+            if (!isDeviceConnected)
+                connectToDevice();
             switch (mode)
             {
-                case ModeOfChangingDiagnostic.CommonMode:
+                case MethodOfChangingDiagnostic.CommonMode:
                     firstPacket[8] = 0x82;
                     break;
-                case ModeOfChangingDiagnostic.CustomOneTimeMode:
+                case MethodOfChangingDiagnostic.CustomOneTimeMode:
                     firstPacket[8] = (byte)(0x80 + (ushort)modeTo);
                     break;
             }
@@ -162,31 +163,26 @@ namespace SPRDClientCore.Utils
 
             var temp = sprdProtocolHandler.UseCrc;
             sprdProtocolHandler.UseCrc = true;
-            if(mode != ModeOfChangingDiagnostic.CustomOneTimeMode)
-            try
-            {
-                if ((bytesReceived = sprdProtocolHandler.SendPacketAndReceiveBytes(BSL_CMD_CONNECT, Array.Empty<byte>())).Length >= 6 && isInDownloadMode(bytesReceived))
+            if (mode != MethodOfChangingDiagnostic.CustomOneTimeMode)
+                try
                 {
-                    isSprd4AfterChangeDiagMode = bytesReceived[2] == (byte)BSL_REP_VER && Encoding.ASCII.GetString(bytesReceived.AsSpan(3, bytesReceived.Length - 6)).ToLower().Contains("autod");
-                    monitor.Stop();
-                    return;
+                    if ((bytesReceived = sprdProtocolHandler.SendPacketAndReceiveBytes(BSL_CMD_CONNECT, Array.Empty<byte>())).Length >= 6 && isInDownloadMode(bytesReceived))
+                    {
+                        isSprd4AfterChangeDiagMode = bytesReceived[2] == (byte)BSL_REP_VER && Encoding.ASCII.GetString(bytesReceived.AsSpan(5, bytesReceived.Length - 8)).ToLower().Contains("autod");
+                        monitor.Stop();
+                        return;
+                    }
                 }
-            }
-            catch (TimeoutException)
-            {
+                catch (TimeoutException)
+                {
 
-            }
+                }
             sprdProtocolHandler.UseCrc = temp;
 
-            if (modeTo == ModeToChange.DlDiagnostic && mode == ModeOfChangingDiagnostic.CommonMode)
+            if (modeTo == ModeToChange.DlDiagnostic && mode == MethodOfChangingDiagnostic.CommonMode)
             {
                 log?.Invoke($"尝试发送autod包");
                 bytesReceived = sprdProtocolHandler.SendBytesAndReceiveBytes(autodloaderPacket);
-                if (isInDownloadMode(bytesReceived))
-                {
-                    monitor.Stop();
-                    return;
-                }
                 waitForDeviceDisconnecting();
                 connectToDevice();
             }
@@ -438,11 +434,11 @@ namespace SPRDClientCore.Utils
                         ushort nowReadSize = (ushort)Math.Min(dataLength - i, blocksize);
                         byte[] block = new byte[nowReadSize];
                         data.ReadExactly(block, 0, block.Length);
-                        await sendChannel.Writer.WriteAsync(new Packet(BSL_CMD_MIDST_DATA, block, checksum));
+                        await sendChannel.Writer.WriteAsync(new Packet(BSL_CMD_MIDST_DATA, block, checksum),token);
                         i += nowReadSize;
                     }
                     sendChannel.Writer.Complete();
-                }, token);
+                });
 
                 int packetCounts = 0;
                 int expectedPacketsCounts = (int)Math.Ceiling((double)dataLength / blocksize);
@@ -457,15 +453,13 @@ namespace SPRDClientCore.Utils
                     nowBytes += blocksize;
                     if (packetCounts >= expectedPacketsCounts)
                         break;
+
                 }
             }
             finally
             {
+
                 sw.Stop();
-                Log?.Invoke($"{partName}分区写入完毕");
-                Log?.Invoke($"耗时{sw.Elapsed:g}");
-                handler.SendPacketAndReceive(BSL_CMD_END_DATA);
-                receiveChannel.Writer.Complete();
                 cts.Cancel();
                 cts.Dispose();
                 try
@@ -476,6 +470,7 @@ namespace SPRDClientCore.Utils
                 {
 
                 }
+                handler.SendPacketAndReceive(BSL_CMD_END_DATA);
 
                 if (sendAndReceiveTask != null)
                     try
@@ -495,7 +490,8 @@ namespace SPRDClientCore.Utils
                     {
 
                     }
-
+                Log?.Invoke($"{partName}分区写入完毕");
+                Log?.Invoke($"耗时{sw.Elapsed:g}");
             }
         }
         public async Task WritePartitionWithoutVerifyAsync(string partName, List<Partition> partitions, Stream data, CancellationToken token)
@@ -647,7 +643,7 @@ namespace SPRDClientCore.Utils
                 var ack = handler.SendPacketAndReceive(BSL_CMD_READ_START, CreateSelectPartitionRequest(partName, size + offset));
                 if (ack.Type != BSL_REP_ACK)
                     throw new UnexpectedResponseException(ack.Type);
-                Log?.Invoke($"开始读取{partName}分区（SPRDClient极速异步读取中）");
+                Log?.Invoke($"开始读取{partName}分区（SPRDClientCore多线程极速读取中）");
                 sendAndReceiveTask = handler.SendPacketsAndReceiveAsync(
     receiveChannel.Writer,
     sendChannel.Reader,
@@ -686,10 +682,8 @@ namespace SPRDClientCore.Utils
             finally
             {
                 sw.Stop();
-                Log?.Invoke($"耗时{sw.Elapsed.ToString("g")}");
                 cts.Cancel();
                 cts.Dispose();
-                receiveChannel.Writer.Complete();
 
                 try
                 {
@@ -713,6 +707,7 @@ namespace SPRDClientCore.Utils
 
                 handler.SendPacketAndReceive(BSL_CMD_READ_END);
                 PerBlockSize = originBlockSize;
+                Log?.Invoke($"耗时{sw.Elapsed.ToString("g")}");
                 Log?.Invoke($"读取{partName}分区结束,大小：{size},偏移量:{offset}");
             }
 
@@ -723,6 +718,7 @@ namespace SPRDClientCore.Utils
             int originTimeout = handler.Timeout;
             handler.Timeout = timeout;
             handler.SendPacketAndReceive(BSL_CMD_ERASE_FLASH, CreateSelectPartitionRequest(partName, 0));
+            Log?.Invoke($"已擦除{partName}分区");
             handler.Timeout = originTimeout;
         }
         public ulong GetPartitionSize(string partName)
@@ -915,6 +911,7 @@ namespace SPRDClientCore.Utils
         }
         public void Repartition(List<Partition> partitions)
         {
+            if (partitions[0].Name == "splloader") partitions.RemoveAt(0);
             byte[] repartitionData = new byte[partitions.Count * (36 * sizeof(char) + sizeof(uint))];
             int i = 0;
             foreach (Partition partition in partitions)
@@ -925,7 +922,7 @@ namespace SPRDClientCore.Utils
                     continue;
                 }
 
-                CreateSelectPartitionRequest(repartitionData.AsMemory(i), partition.Name, partition.Size >> partition.IndicesToMB);
+                CreateSelectPartitionRequest(repartitionData.AsMemory(i), partition.Name,partition.Name == "userdata" ? 0xffffffff : partition.Size >> partition.IndicesToMB);
                 i += 36 * sizeof(char) + sizeof(uint);
             }
             var a = handler.SendPacketAndReceive(BSL_CMD_REPARTITION, repartitionData).Type;
@@ -964,13 +961,14 @@ namespace SPRDClientCore.Utils
             }
             return res.Type == expectedType;
         }
-        public DaInfo? ExecuteDataAndConnect(Stages stage)
+        public DaInfo? ExecuteDataAndConnect(Stages stage, bool isAfterSendingExecAddr = false)
         {
             switch (stage)
             {
                 default: throw new ArgumentException();
                 case Stages.Brom:
-                    SendAndCheck(BSL_CMD_EXEC_DATA);
+                    if (!isAfterSendingExecAddr)
+                        SendAndCheck(BSL_CMD_EXEC_DATA);
                     Log?.Invoke("已执行fdl1");
                     handler.UseCrc = false;
                     SendAndCheck(BSL_CMD_CHECK_BAUD);
@@ -1142,6 +1140,7 @@ namespace SPRDClientCore.Utils
         }
         public static void SavePartitionsToXml(List<Partition> partitions, Stream stream)
         {
+            if (partitions[0].Name == "splloader") partitions.RemoveAt(0);
             var doc = new XDocument(
                 new XElement("Partitions",
                     partitions.Select(p =>
