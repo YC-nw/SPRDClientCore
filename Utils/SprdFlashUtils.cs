@@ -230,6 +230,7 @@ namespace SPRDClientCore.Utils
         {
             if (string.IsNullOrWhiteSpace(partName))
                 return false;
+            if (partName.Contains("nv1")) partName = partName.Replace('1', '2');
             var receiveType = handler.SendPacketAndReceive(BSL_CMD_READ_START, CreateSelectPartitionRequest(partName, 0x8)).Type;
             if (receiveType == BSL_REP_ACK)
             {
@@ -434,7 +435,7 @@ namespace SPRDClientCore.Utils
                         ushort nowReadSize = (ushort)Math.Min(dataLength - i, blocksize);
                         byte[] block = new byte[nowReadSize];
                         data.ReadExactly(block, 0, block.Length);
-                        await sendChannel.Writer.WriteAsync(new Packet(BSL_CMD_MIDST_DATA, block, checksum),token);
+                        await sendChannel.Writer.WriteAsync(new Packet(BSL_CMD_MIDST_DATA, block, checksum), token);
                         i += nowReadSize;
                     }
                     sendChannel.Writer.Complete();
@@ -713,12 +714,13 @@ namespace SPRDClientCore.Utils
 
         }
         #endregion
-        public void ErasePartition(string partName, int timeout = 20000)
+        public void ErasePartition(string partName, int timeout = 40000)
         {
             int originTimeout = handler.Timeout;
             handler.Timeout = timeout;
-            handler.SendPacketAndReceive(BSL_CMD_ERASE_FLASH, CreateSelectPartitionRequest(partName, 0));
-            Log?.Invoke($"已擦除{partName}分区");
+            if (handler.SendPacketAndReceive(BSL_CMD_ERASE_FLASH, CreateSelectPartitionRequest(partName, 0)).Type != BSL_REP_ACK)
+                Log?.Invoke($"擦除{partName}分区失败");
+            else Log?.Invoke($"已擦除{partName}分区");
             handler.Timeout = originTimeout;
         }
         public ulong GetPartitionSize(string partName)
@@ -922,7 +924,7 @@ namespace SPRDClientCore.Utils
                     continue;
                 }
 
-                CreateSelectPartitionRequest(repartitionData.AsMemory(i), partition.Name,partition.Name == "userdata" ? 0xffffffff : partition.Size >> partition.IndicesToMB);
+                CreateSelectPartitionRequest(repartitionData.AsMemory(i), partition.Name, partition.Name == "userdata" ? 0xffffffff : partition.Size >> partition.IndicesToMB);
                 i += 36 * sizeof(char) + sizeof(uint);
             }
             var a = handler.SendPacketAndReceive(BSL_CMD_REPARTITION, repartitionData).Type;

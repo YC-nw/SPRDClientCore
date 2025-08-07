@@ -26,7 +26,7 @@ namespace SPRDClientExample
             {
                 var cfg = ConnectionConfig.Parse(ref args);
                 Log("等待设备连接 (dl_diag)...");
-                string port = SprdProtocolHandler.FindComPort(timeout: cfg.WaitTime);
+                string port = SprdProtocolHandler.FindComPort(timeout: cfg.WaitTime * 1000);
                 Log($"找到端口: {port}");
                 SprdProtocolHandler handler = new(port, new HdlcEncoder());
                 if (cfg.Method != null)
@@ -67,8 +67,6 @@ namespace SPRDClientExample
                 await ce.ExecuteAsync(args.ToList());
                 while (!status.HasExited)
                 {
-                    try
-                    {
                         if (status.NowStage == Stages.Fdl2 && !hasGottenPartitionList)
                         {
                             var p = util.GetPartitionsAndStorageInfo();
@@ -85,11 +83,6 @@ namespace SPRDClientExample
                         Console.Write($"{status.NowStage} :");
                         string? a = Console.ReadLine();
                         await ce.ExecuteAsync(a ?? "");
-                    }
-                    catch (Exception e)
-                    {
-                        Log($"发生错误: {e.Message}");
-                    }
                 }
             }
             catch (TimeoutException)
@@ -98,7 +91,7 @@ namespace SPRDClientExample
             }
             catch (Exception e)
             {
-                Log($"发生错误: {e}");
+                Log($"发生错误: {e.Message}");
             }
             finally
             {
@@ -108,7 +101,7 @@ namespace SPRDClientExample
         }
         class ConsoleProgressBar
         {
-            public int BarWidth { get; set; } = 45;
+            public int BarWidth { get; set; } = 25;
             public void UpdateProgress(int percentage)
             {
                 if (percentage > 100) percentage = 100;
@@ -139,7 +132,7 @@ namespace SPRDClientExample
                 }
             }
         }
-        class ProgressUpdater : IDisposable 
+        class ProgressUpdater : IDisposable
         {
             public event Action<int>? UpdateEvent;
 
@@ -151,8 +144,7 @@ namespace SPRDClientExample
                 {
                     SingleReader = true,
                     SingleWriter = true,
-                    FullMode = BoundedChannelFullMode.DropWrite
-
+                    FullMode = BoundedChannelFullMode.DropOldest
                 });
             private async Task StartTask(CancellationToken ct)
             {
@@ -192,11 +184,11 @@ namespace SPRDClientExample
             public GetPartitionsMethod Method { get; set; }
             public string? ExecAddrFilePath { get; set; } = null;
             public uint ExecAddrSendAddress { get; set; }
-            public bool IsAbleToSendExecAddr => NowStage == Stages.Brom && ExecAddrFilePath != null && ExecAddrSendAddress != 0;
+            public bool IsAbleToSendExecAddr => ExecAddrFilePath != null && ExecAddrSendAddress != 0;
         }
         public class ConnectionConfig
         {
-            public uint WaitTime { get; set; } = 30000;
+            public uint WaitTime { get; set; } = 30;
             public int Timeout { get; set; } = 5000;
             public MethodOfChangingDiagnostic? Method { get; set; } = null;
             public ModeToChange ModeToChange { get; set; }
@@ -363,230 +355,243 @@ namespace SPRDClientExample
             }
             public async Task<bool> ExecuteAsyncSingle(List<string> args)
             {
-                if (args.Count > 0)
-                    switch (args[0])
-                    {
-                        default: Log(commandHelp); break;
-                        case "fdl":
-                            if (args.Count < 3 || !File.Exists(args[1]))
-                            {
-                                Log(commandHelp);
-                                return false;
-                            }
-                            if (status.NowStage >= Stages.Fdl2) break;
-                            if (status.NowStage == Stages.Brom) utils.Timeout = 1500;
-                            using (FileStream fs = File.OpenRead(args[1]))
-                                utils.SendFile(fs, (uint)StringToSize(args[2]));
-                            if (status.IsAbleToSendExecAddr && status.ExecAddrFilePath != null)
-                                using (FileStream fs = File.OpenRead(status.ExecAddrFilePath))
-                                    utils.SendFile(fs, status.ExecAddrSendAddress);
-                            utils.ExecuteDataAndConnect(status.NowStage++, status.IsAbleToSendExecAddr);
-                            break;
-                        case "exec_addr":
-                            if (args.Count < 3 || !File.Exists(args[1]))
-                            {
-                                Log(commandHelp);
-                                break;
-                            }
-                            if (status.NowStage != Stages.Brom)
-                            {
-                                Log("此命令只能在BROM阶段使用");
-                                break;
-                            }
-                            status.ExecAddrFilePath = args[1];
-                            status.ExecAddrSendAddress = (uint)StringToSize(args[2]);
-                            break;
-                        case "r" or "read_part":
-                            if (status.NowStage != Stages.Fdl2) break;
-                            if (args.Count < 2)
-                            {
-                                Log(commandHelp);
-                                break;
-                            }
-                            if (args[1].ToLowerInvariant() == "all" && status.PartitionList != null)
-                            {
-                                foreach (var part in status.PartitionList)
+                try
+                {
+                    if (args.Count > 0)
+                        switch (args[0])
+                        {
+                            default: Log(commandHelp); break;
+                            case "fdl":
+                                if (args.Count < 3 || !File.Exists(args[1]))
                                 {
-                                    if (part.Name == "userdata" || part.Name == "cache") continue;
-                                    using (FileStream fs = File.Create(args.Count >= 3 && Path.Exists(args[2]) ? args[2] : part.Name + ".img"))
+                                    Log(commandHelp);
+                                    return false;
+                                }
+                                if (status.NowStage >= Stages.Fdl2) break;
+                                if (status.NowStage == Stages.Brom) utils.Timeout = 1500;
+                                using (FileStream fs = File.OpenRead(args[1]))
+                                    utils.SendFile(fs, (uint)StringToSize(args[2]));
+                                if (status.IsAbleToSendExecAddr && status.ExecAddrFilePath != null && status.NowStage == Stages.Brom)
+                                    using (FileStream fs = File.OpenRead(status.ExecAddrFilePath))
+                                        utils.SendFile(fs, status.ExecAddrSendAddress, sendEndData: false);
+                                utils.ExecuteDataAndConnect(status.NowStage++, status.IsAbleToSendExecAddr);
+                                break;
+                            case "exec_addr":
+                                if (args.Count < 3 || !File.Exists(args[1]))
+                                {
+                                    Log(commandHelp);
+                                    break;
+                                }
+                                if (status.NowStage != Stages.Brom)
+                                {
+                                    Log("此命令只能在BROM阶段使用");
+                                    break;
+                                }
+                                status.ExecAddrFilePath = args[1];
+                                status.ExecAddrSendAddress = (uint)StringToSize(args[2]);
+                                break;
+                            case "r" or "read_part":
+                                if (status.NowStage != Stages.Fdl2) break;
+                                if (args.Count < 2)
+                                {
+                                    Log(commandHelp);
+                                    break;
+                                }
+                                if (args[1].ToLowerInvariant() == "all" && status.PartitionList != null)
+                                {
+                                    CancellationToken token = cts.Token;
+                                    foreach (var part in status.PartitionList)
                                     {
-                                        await utils.ReadPartitionCustomizeAsync(fs, part.Name,
-                                            part.Size, cts.Token);
+                                        if (token.IsCancellationRequested) break;
+                                        if (part.Name == "userdata" || part.Name == "cache") continue;
+                                        using (FileStream fs = File.Create(args.Count >= 3 && Path.Exists(args[2]) ? args[2] : part.Name + ".img"))
+                                        {
+                                            await utils.ReadPartitionCustomizeAsync(fs, part.Name,
+                                                part.Size, token);
+                                        }
                                     }
                                 }
-                            }
-                            else if (utils.CheckPartitionExist(args[1]))
-                                using (FileStream fs = File.Create(args.Count >= 3 ? args[2] : args[1] + ".img"))
-                                    await utils.ReadPartitionCustomizeAsync(fs, args[1],
-                                       args.Count >= 4 ?
-                                       StringToSize(args[3])
-                                       : utils.GetPartitionSize(args[1]),
-                                        cts.Token
-                                        , offset: args.Count >= 5 ? StringToSize(args[4]) : 0);
-                            break;
-                        case "w" or "write_part":
-                            if (status.NowStage != Stages.Fdl2) break;
-                            if (args.Count < 3)
-                            {
+                                else if (utils.CheckPartitionExist(args[1]))
+                                    using (FileStream fs = File.Create(args.Count >= 3 ? args[2] : args[1] + ".img"))
+                                        await utils.ReadPartitionCustomizeAsync(fs, args[1],
+                                           args.Count >= 4 ?
+                                           StringToSize(args[3])
+                                           : utils.GetPartitionSize(args[1]),
+                                            cts.Token
+                                            , offset: args.Count >= 5 ? StringToSize(args[4]) : 0);
                                 break;
-                            }
-                            if (File.Exists(args[2]))
-                                using (FileStream fs = File.OpenRead(args[2]))
+                            case "w" or "write_part":
+                                if (status.NowStage != Stages.Fdl2) break;
+                                if (args.Count < 3)
                                 {
-                                    if (args.Count >= 4 && args[3].ToLowerInvariant() == "force" && status.Method != GetPartitionsMethod.TraverseCommonPartitions && status.PartitionList != null)
-                                        await utils.WritePartitionWithoutVerifyAsync(args[1], status.PartitionList, fs, cts.Token);
-                                    else
-                                        await utils.WritePartitionAsync(args[1], fs, cts.Token);
+                                    break;
                                 }
-                            break;
-                        case "e" or "erase_part":
-                            utils.Timeout += 50000;
-                            if (status.NowStage != Stages.Fdl2) break;
-                            if (args.Count < 2)
-                            {
-                                Log(commandHelp);
+                                if (File.Exists(args[2]))
+                                    using (FileStream fs = File.OpenRead(args[2]))
+                                    {
+                                        if (args.Count >= 4 && args[3].ToLowerInvariant() == "force" && status.Method != GetPartitionsMethod.TraverseCommonPartitions && status.PartitionList != null)
+                                            await utils.WritePartitionWithoutVerifyAsync(args[1], status.PartitionList, fs, cts.Token);
+                                        else
+                                            await utils.WritePartitionAsync(args[1], fs, cts.Token);
+                                    }
                                 break;
-                            }
-                            utils.ErasePartition(args[1]);
-                            utils.Timeout -= 50000;
-                            break;
-                        case "ps" or "part_size":
-                            if (status.NowStage != Stages.Fdl2) break;
-                            if (args.Count < 2)
-                            {
-                                Log(commandHelp);
+                            case "e" or "erase_part":
+                                if (status.NowStage != Stages.Fdl2) break;
+                                if (args.Count < 2)
+                                {
+                                    Log(commandHelp);
+                                    break;
+                                }
+                                utils.ErasePartition(args[1]);
                                 break;
-                            }
-                            if (utils.CheckPartitionExist(args[1]))
-                                Log($"{utils.GetPartitionSize(args[1]) / 1024 / 1024}MB");
-                            break;
-                        case "cp" or "check_part":
-                            if (args.Count < 2)
-                            {
-                                Log(commandHelp);
-                                return false;
-                            }
-                            bool exists = utils.CheckPartitionExist(args[1]);
-                            Log(exists ? "存在" : "不存在", exists ? ConsoleColor.Green : ConsoleColor.Red);
-                            break;
-                        case "off" or "poweroff":
-                            utils.ShutdownDevice();
-                            status.HasExited = true;
-                            return true;
-                        case "set_active" or "sa":
-                            if (status.NowStage != Stages.Fdl2) break;
-                            if (args.Count < 2)
-                            {
-                                Log(commandHelp);
+                            case "ps" or "part_size":
+                                if (status.NowStage != Stages.Fdl2) break;
+                                if (args.Count < 2)
+                                {
+                                    Log(commandHelp);
+                                    break;
+                                }
+                                if (utils.CheckPartitionExist(args[1]))
+                                    Log($"{utils.GetPartitionSize(args[1]) / 1024 / 1024}MB");
                                 break;
-                            }
-                            utils.SetActiveSlot(args[1] switch
-                            {
-                                "a" or "A" => SlotToSetActive.SlotA,
-                                "b" or "B" => SlotToSetActive.SlotB,
-                                _ => throw new ArgumentException("未知的槽位"),
-                            });
-                            break;
-                        case "rst" or "reset":
-                            if (args.Count > 2)
-                            {
+                            case "cp" or "check_part":
+                                if (args.Count < 2)
+                                {
+                                    Log(commandHelp);
+                                    return false;
+                                }
+                                bool exists = utils.CheckPartitionExist(args[1]);
+                                Log(exists ? "存在" : "不存在", exists ? ConsoleColor.Green : ConsoleColor.Red);
+                                break;
+                            case "off" or "poweroff":
+                                utils.ShutdownDevice();
+                                status.HasExited = true;
+                                return true;
+                            case "set_active" or "sa":
+                                if (status.NowStage != Stages.Fdl2) break;
+                                if (args.Count < 2)
+                                {
+                                    Log(commandHelp);
+                                    break;
+                                }
                                 try
                                 {
-                                    utils.ResetToCustomMode(args[1] switch
+
+                                    utils.SetActiveSlot(args[1] switch
                                     {
-                                        "fastboot" or "fb" => CustomModesToReset.Fastboot,
-                                        "recovery" or "rc" or "rec" => CustomModesToReset.Recovery,
-                                        "factory-reset" or "fr" => CustomModesToReset.FactoryReset,
-                                        _ => throw new ArgumentException("未知的重置模式"),
+                                        "a" or "A" => SlotToSetActive.SlotA,
+                                        "b" or "B" => SlotToSetActive.SlotB,
+                                        _ => throw new ArgumentException("未知的槽位"),
                                     });
                                 }
                                 catch (ArgumentException e)
                                 {
                                     Log(e.Message);
                                 }
-                            }
-                            utils.PowerOnDevice();
-                            status.HasExited = true;
-                            return true;
-                        case "repartition" or "rp":
-                            if (status.NowStage != Stages.Fdl2) break;
-                            if (args.Count < 2)
-                            {
-                                Log(commandHelp);
                                 break;
-                            }
-                            if (!File.Exists(args[1])) break;
-                            var temp = LoadPartitionsXml(File.ReadAllText(args[1]));
-                            utils.Repartition(temp);
-                            status.PartitionList = temp;
-                            break;
-                        case "partition_list" or "pl":
-                            if (status.NowStage != Stages.Fdl2 || status.PartitionList == null) break;
-                            foreach (Partition partition in status.PartitionList)
-                            {
-                                Log(partition.ToString(), ConsoleColor.Yellow);
-                            }
-                            if (args.Count >= 2)
-                            {
-                                using (FileStream fs = File.Create(args[1]))
-                                    SavePartitionsToXml(status.PartitionList, fs);
-                                Log($"已保存分区表到 {args[1]}");
-                            }
-                            break;
-                        case "verity":
-                            if (status.NowStage != Stages.Fdl2) break;
-                            if (args.Count < 2)
-                            {
-                                Log(commandHelp);
+                            case "rst" or "reset":
+                                if (args.Count >= 2)
+                                {
+                                    try
+                                    {
+                                        utils.ResetToCustomMode(args[1] switch
+                                        {
+                                            "fastboot" or "fb" => CustomModesToReset.Fastboot,
+                                            "recovery" or "rc" or "rec" => CustomModesToReset.Recovery,
+                                            "factory-reset" or "fr" => CustomModesToReset.FactoryReset,
+                                            _ => throw new ArgumentException("未知的重置模式"),
+                                        });
+                                    }
+                                    catch (ArgumentException e)
+                                    {
+                                        Log(e.Message);
+                                    }
+                                }
+                                utils.PowerOnDevice();
+                                status.HasExited = true;
+                                return true;
+                            case "repartition" or "rp":
+                                if (status.NowStage != Stages.Fdl2) break;
+                                if (args.Count < 2)
+                                {
+                                    Log(commandHelp);
+                                    break;
+                                }
+                                if (!File.Exists(args[1])) break;
+                                var temp = LoadPartitionsXml(File.ReadAllText(args[1]));
+                                utils.Repartition(temp);
+                                status.PartitionList = temp;
                                 break;
-                            }
-                            if (status.PartitionList == null || status.Method == GetPartitionsMethod.TraverseCommonPartitions)
-                            {
-                                Log("当前fdl不支持此功能");
+                            case "partition_list" or "pl":
+                                if (status.NowStage != Stages.Fdl2 || status.PartitionList == null) break;
+                                foreach (Partition partition in status.PartitionList)
+                                {
+                                    Log(partition.ToString(), ConsoleColor.Yellow);
+                                }
+                                if (args.Count >= 2)
+                                {
+                                    using (FileStream fs = File.Create(args[1]))
+                                        SavePartitionsToXml(status.PartitionList, fs);
+                                    Log($"已保存分区表到 {args[1]}");
+                                }
                                 break;
-                            }
-                            if (bool.TryParse(args[1], out bool enable))
-                            {
-                                utils.SetDmVerityStatus(enable, status.PartitionList);
-                            }
-                            else
-                            {
-                                Log("请使用 true 或 false");
-                            }
-                            break;
-                        case "blk_size" or "bs":
-                            if (args.Count < 2)
-                            {
-                                Log(commandHelp);
+                            case "verity":
+                                if (status.NowStage != Stages.Fdl2) break;
+                                if (args.Count < 2)
+                                {
+                                    Log(commandHelp);
+                                    break;
+                                }
+                                if (status.PartitionList == null || status.Method == GetPartitionsMethod.TraverseCommonPartitions)
+                                {
+                                    Log("当前fdl不支持此功能");
+                                    break;
+                                }
+                                if (bool.TryParse(args[1], out bool enable))
+                                {
+                                    utils.SetDmVerityStatus(enable, status.PartitionList);
+                                }
+                                else
+                                {
+                                    Log("请使用 true 或 false");
+                                }
                                 break;
-                            }
-                            utils.PerBlockSize = (ushort)StringToSize(args[1]);
-                            Log($"已设置块大小为 {utils.PerBlockSize}B");
-                            break;
-                        case "timeout":
-                            if (args.Count < 2)
-                            {
-                                Log(commandHelp);
+                            case "blk_size" or "bs":
+                                if (args.Count < 2)
+                                {
+                                    Log(commandHelp);
+                                    break;
+                                }
+                                utils.PerBlockSize = (ushort)StringToSize(args[1]);
+                                Log($"已设置块大小为 {utils.PerBlockSize}B");
                                 break;
-                            }
-                            if (int.TryParse(args[1], out int timeout))
-                            {
-                                utils.Timeout = timeout;
-                                Log($"已设置超时为 {timeout} 毫秒");
-                            }
-                            else
-                            {
-                                Log("无效的超时值");
-                            }
-                            break;
+                            case "timeout":
+                                if (args.Count < 2)
+                                {
+                                    Log(commandHelp);
+                                    break;
+                                }
+                                if (int.TryParse(args[1], out int timeout))
+                                {
+                                    utils.Timeout = timeout;
+                                    Log($"已设置超时为 {timeout} 毫秒");
+                                }
+                                else
+                                {
+                                    Log("无效的超时值");
+                                }
+                                break;
 
-                    }
+                        }
+                }
+                catch (OperationCanceledException) { }
                 return false;
             }
 
             public void CancelAction()
             {
                 cts.Cancel();
+                cts.Dispose();
                 cts = new();
             }
         }
