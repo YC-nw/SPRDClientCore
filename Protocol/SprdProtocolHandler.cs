@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO.Ports;
 using System.Management;
 using System.Runtime.CompilerServices;
+using System.Runtime.Versioning;
 using System.Threading.Channels;
 
 namespace SPRDClientCore.Protocol
@@ -67,7 +68,7 @@ namespace SPRDClientCore.Protocol
             serialPort.PortName = port;
             serialPort.Open();
         }
-
+        [SupportedOSPlatform("windows")]
         public static string FindComPort(string identifier = "SPRD U2S DIAG")
         {
             for (; ; )
@@ -105,6 +106,7 @@ namespace SPRDClientCore.Protocol
             }
 
         }
+        [SupportedOSPlatform("windows")]
         public static string FindComPort(uint timeout, string Identifier = "SPRD U2S DIAG")
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
@@ -126,6 +128,7 @@ namespace SPRDClientCore.Protocol
         }
 
 
+        [SupportedOSPlatform("windows")]
         public static List<string> FindAllPorts(string usbIdentifier)
         {
             var ports = new List<string>();

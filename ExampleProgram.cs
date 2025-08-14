@@ -1,9 +1,11 @@
-﻿using System.Text;
+﻿using System.Runtime.Versioning;
+using System.Text;
 using System.Threading.Channels;
 
 namespace SPRDClientExample
 
 {
+    [SupportedOSPlatform("windows")]
     public class Program
     {
         private static object _lock = new();
@@ -63,26 +65,12 @@ namespace SPRDClientExample
                     e.Cancel = true;
                     ce.CancelAction();
                 };
-                bool hasGottenPartitionList = false;
                 await ce.ExecuteAsync(args.ToList());
                 while (!status.HasExited)
                 {
-                        if (status.NowStage == Stages.Fdl2 && !hasGottenPartitionList)
-                        {
-                            var p = util.GetPartitionsAndStorageInfo();
-                            Console.ForegroundColor = ConsoleColor.Yellow;
-                            foreach (Partition partition in p.partitions) Log(partition.ToString());
-                            Console.ForegroundColor = ConsoleColor.White;
-                            using (FileStream fs = File.Create("partition_list.xml"))
-                                SavePartitionsToXml(p.partitions, fs);
-                            Log("已保存分区表");
-                            hasGottenPartitionList = true;
-                            status.PartitionList = p.partitions;
-                            status.Method = p.finalMethod;
-                        }
-                        Console.Write($"{status.NowStage} :");
-                        string? a = Console.ReadLine();
-                        await ce.ExecuteAsync(a ?? "");
+                    Console.Write($"{status.NowStage} :");
+                    string? a = Console.ReadLine();
+                    await ce.ExecuteAsync(a ?? "");
                 }
             }
             catch (TimeoutException)
@@ -261,7 +249,7 @@ namespace SPRDClientExample
 --timeout [毫秒时间]：设置最大超时限制
 --wait [秒数]：设置等待设备连接的时间(默认30秒)
 运行时指令：
-发送并执行fdl：fdl [文件路径] [发送地址（0x格式）]
+发送并执行fdl：fdl [文件路径] [发送地址（0x格式）]......（支持发送多个文件）
 利用CVE漏洞跳过验证(仅限brom阶段)：exec_addr [文件路径] [发送地址（0x格式）]
 写入分区（强制写入在文件路径后加参数force）：w/write_part [分区名] [文件路径] <force>
 回读分区：r/read_part [分区名] <保存路径> <回读大小> <回读偏移量>
@@ -277,6 +265,12 @@ namespace SPRDClientExample
 关机: off/poweroff
 开机(至XX模式): rst/reset <fastboot/fb/recovery/rc/factory-reset/fr>
 
+高级指令：
+解锁bootloader（仅在特殊fdl2上支持，且需要trustos、sml分区）：unlock_bootloader/ub 
+回锁bootloader（仅在特殊fdl2上支持，且需要trustos、sml分区）：lock_bootloader/lb 
+发送指定数据包：send_packet/sp [0x十六进制字节数据包......(支持多个)]
+
+参数设置指令: 
 设置块大小：blk_size/bs [大小]
 设置最大超时限制: timeout [毫秒时间]";
             private static readonly HashSet<string> CommandKeys = new(StringComparer.OrdinalIgnoreCase)
@@ -296,6 +290,10 @@ namespace SPRDClientExample
                 "set_active","sa",
                 "blk_size","bs",
                 "timeout",
+                "unlock_bootloader","ub",
+                "lock_bootloader","lb",
+                "send_packet","sp"
+
             };
 
 
@@ -369,8 +367,9 @@ namespace SPRDClientExample
                                 }
                                 if (status.NowStage >= Stages.Fdl2) break;
                                 if (status.NowStage == Stages.Brom) utils.Timeout = 1500;
-                                using (FileStream fs = File.OpenRead(args[1]))
-                                    utils.SendFile(fs, (uint)StringToSize(args[2]));
+                                for (int i = 1; i < args.Count;)
+                                    using (FileStream fs = File.OpenRead(args[i++]))
+                                        utils.SendFile(fs, (uint)StringToSize(args[i++]));
                                 if (status.IsAbleToSendExecAddr && status.ExecAddrFilePath != null && status.NowStage == Stages.Brom)
                                     using (FileStream fs = File.OpenRead(status.ExecAddrFilePath))
                                         utils.SendFile(fs, status.ExecAddrSendAddress, sendEndData: false);
@@ -581,7 +580,17 @@ namespace SPRDClientExample
                                     Log("无效的超时值");
                                 }
                                 break;
-
+                            case "unlock_bootloader" or "ub":
+                                Log(utils.SetBootloaderLockStatus(false) ? "解锁bootloader成功" : "当前fdl不支持解锁bootloader");
+                                break;
+                            case "lock_bootloader" or "lb":
+                                Log(utils.SetBootloaderLockStatus(true) ? "回锁bootloader成功" : "当前fdl不支持回锁bootloader");
+                                break;
+                            case "send_packet" or "sp":
+                                if (args.Count >= 2)
+                                    for (int i = 1; i < args.Count; ++i)
+                                        Log($"发送{(SprdCommand)StringToSize(args[i])}，接收{utils.Handler.SendPacketAndReceive((SprdCommand)StringToSize(args[i]))}");
+                                break;
                         }
                 }
                 catch (OperationCanceledException) { }

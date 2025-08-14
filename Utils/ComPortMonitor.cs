@@ -1,8 +1,9 @@
 ﻿using System.Management;
+using System.Runtime.Versioning;
 
 namespace SPRDClientCore.Utils
 {
-
+    [SupportedOSPlatform("windows")]
     public class ComPortMonitor
     {
         private ManagementEventWatcher _watcher;

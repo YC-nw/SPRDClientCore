@@ -134,7 +134,12 @@ namespace SPRDClientCore.Models
         BSL_CMD_READ_SOFTSIM_EID = 0x16, /* Read softSIM EID */
         BSL_CMD_POWER_OFF = 0x17, /* Power Off */
         BSL_CMD_CHECK_ROOT = 0x19, /* Check Root */
+        YCC_CMD_UNLOCK_BOOTLOADER = 0x19,
+
         BSL_CMD_READ_CHIP_UID = 0x1A, /* Read Chip UID */
+
+        YCC_CMD_LOCK_BOOTLOADER = 0x1A,
+
         BSL_CMD_ENABLE_WRITE_FLASH = 0x1B, /* Enable flash */
         BSL_CMD_ENABLE_SECUREBOOT = 0x1C, /* Enable secure boot */
         BSL_CMD_IDENTIFY_START = 0x1D, /* Identify start */
@@ -196,9 +201,13 @@ namespace SPRDClientCore.Models
 
         BSL_REP_INCOMPATIBLE_PARTITION = 0x96,
         BSL_REP_SIGN_VERIFY_ERROR = 0xA6,
+        BSL_REP_CHECK_ROOT_TRUE = 0xA7,
         BSL_REP_READ_CHIP_UID = 0xAB,
         BSL_REP_READ_PARTITION = 0xBA,
         BSL_REP_READ_LOG = 0xBB,
+
+        YCC_REP_SET_BOOTLOADER_SUCCESS = 0xCC,
+
         BSL_REP_UNSUPPORTED_COMMAND = 0xFE,
         BSL_REP_LOG = 0xFF,
     };

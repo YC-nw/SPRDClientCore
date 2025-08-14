@@ -45,7 +45,8 @@ namespace SPRDClientCore.Models
 
         public override readonly string ToString()
         {
-            return $"Type : 0x{Type.ToString("X")} , Data : {BitConverter.ToString(Data)}";
+            var str = BitConverter.ToString(Data);
+            return $"Type : {Type} , Data : {(string.IsNullOrEmpty(str) ? "None" : str)}";
         }
     }
     public interface IChecksum

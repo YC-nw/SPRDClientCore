@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
@@ -37,6 +38,10 @@ namespace SPRDClientCore.Utils
         public void ShutdownDevice()
         {
             handler.SendPacketAndReceive(BSL_CMD_POWER_OFF);
+        }
+        public bool SetBootloaderLockStatus(bool lockStatus)
+        {
+            return handler.SendPacketAndReceive(lockStatus ? YCC_CMD_LOCK_BOOTLOADER : YCC_CMD_UNLOCK_BOOTLOADER).Type == YCC_REP_SET_BOOTLOADER_SUCCESS;
         }
         public void ResetToCustomMode(CustomModesToReset mode)
         {
@@ -106,12 +111,14 @@ namespace SPRDClientCore.Utils
             }
             throw new ResponseTimeoutReachedException("响应超时");
         }
+        [SupportedOSPlatform("windows")]
         public static SprdProtocolHandler ChangeDiagnosticMode(Action<string>? log = null, Action<string>? notify = null, MethodOfChangingDiagnostic mode = MethodOfChangingDiagnostic.CommonMode, ModeToChange modeTo = ModeToChange.DlDiagnostic)
         {
             var handler = new SprdProtocolHandler(new HdlcEncoder());
             ChangeDiagnosticMode(handler);
             return handler;
         }
+        [SupportedOSPlatform("windows")]
         public static void ChangeDiagnosticMode(SprdProtocolHandler sprdProtocolHandler, Action<string>? log = null, Action<string>? notify = null, MethodOfChangingDiagnostic mode = MethodOfChangingDiagnostic.CommonMode, ModeToChange modeTo = ModeToChange.DlDiagnostic)
         {
             byte[] firstPacket = { 0x7e, 0, 0, 0, 0, 8, 0, 0xfe, 0, 0x7e };
@@ -230,7 +237,6 @@ namespace SPRDClientCore.Utils
         {
             if (string.IsNullOrWhiteSpace(partName))
                 return false;
-            if (partName.Contains("nv1")) partName = partName.Replace('1', '2');
             var receiveType = handler.SendPacketAndReceive(BSL_CMD_READ_START, CreateSelectPartitionRequest(partName, 0x8)).Type;
             if (receiveType == BSL_REP_ACK)
             {
