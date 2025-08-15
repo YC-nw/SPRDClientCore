@@ -81,9 +81,27 @@ namespace SPRDClientCore.Utils
         }
         public (Stages SprdMode, Stages Stage) ConnectToDevice(bool isReconnected = false)
         {
+            var origTimeout = Timeout;
+            if (!isReconnected) Timeout = 500;
             Packet packet;
-            packet = handler.SendPacketAndReceive(isReconnected ? BSL_CMD_CHECK_BAUD : BSL_CMD_CONNECT);
+            try
+            {
+                packet = handler.SendPacketAndReceive(isReconnected ? BSL_CMD_CONNECT : BSL_CMD_CHECK_BAUD);
+            }
+            catch (ResponseTimeoutReachedException)
+            {
+                if(!isReconnected)
+                {
+                    Log?.Invoke("尝试重新连接设备");
+                    packet = handler.SendPacketAndReceive(BSL_CMD_CONNECT);
+                }
+                else
+                {
+                    throw;
+                }
+            }
             Log?.Invoke("尝试发送握手包");
+            Timeout = origTimeout;
             switch (packet.Type)
             {
                 default: throw new UnexpectedResponseException(packet.Type);

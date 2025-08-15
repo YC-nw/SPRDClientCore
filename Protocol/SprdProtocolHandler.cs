@@ -344,7 +344,7 @@ namespace SPRDClientCore.Protocol
             else
             {
                 ushort secondCheckSumValue;
-                if ((secondCheckSumValue = !UseCrc ? sprdChecksum.Compute(payload) : crcChecksum.Compute(payload)) == receivedChecksum)
+                if ((secondCheckSumValue = !UseCrc ? crcChecksum.Compute(payload) : sprdChecksum.Compute(payload)) == receivedChecksum)
                 {
                     UseCrc = !UseCrc;
                     return;

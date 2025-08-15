@@ -46,7 +46,7 @@ namespace SPRDClientExample
                 util.UpdatePercentage += updater.UpdateProgress;
                 util.UpdateStatus += bar.UpdateSpeed;
                 util.Log += Log;
-                var stages = util.ConnectToDevice();
+                var stages = util.ConnectToDevice(cfg.IsReconnected);
                 status.SprdMode = stages.SprdMode;
                 status.NowStage = stages.Stage;
                 Log($"SPRD版本:{status.SprdMode}");
@@ -176,11 +176,12 @@ namespace SPRDClientExample
         }
         public class ConnectionConfig
         {
-            public uint WaitTime { get; set; } = 30;
-            public int Timeout { get; set; } = 5000;
-            public MethodOfChangingDiagnostic? Method { get; set; } = null;
-            public ModeToChange ModeToChange { get; set; }
-            public byte VerboseLevel { get; set; } = 0;
+            public uint WaitTime { get; private set; } = 30;
+            public int Timeout { get; private set; } = 5000;
+            public MethodOfChangingDiagnostic? Method { get; private set; } = null;
+            public ModeToChange ModeToChange { get; private set; }
+            public byte VerboseLevel { get; private set; } = 0;
+            public bool IsReconnected { get; private set; } = false;
             public static ConnectionConfig Parse(ref string[] args)
             {
                 ConnectionConfig config = new();
@@ -218,6 +219,9 @@ namespace SPRDClientExample
                                 i++;
                             }
                             break;
+                        case "--r":
+                            config.IsReconnected = true;
+                            break;
                         default:
                             matched = false;
                             break;
@@ -248,6 +252,8 @@ namespace SPRDClientExample
 --kickto [0-127]：将设备踢入指定模式(多数设备1为cali_diag, 2为sprd4)
 --timeout [毫秒时间]：设置最大超时限制
 --wait [秒数]：设置等待设备连接的时间(默认30秒)
+--r 以重连模式连接设备
+
 运行时指令：
 发送并执行fdl：fdl [文件路径] [发送地址（0x格式）]......（支持发送多个文件）
 利用CVE漏洞跳过验证(仅限brom阶段)：exec_addr [文件路径] [发送地址（0x格式）]
